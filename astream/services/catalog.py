@@ -197,7 +197,7 @@ class CatalogService:
         Catalogue des anime actuellement en cours de diffusion (depuis le planning).
         """
         try:
-            from astream.scrapers.animesama.planning import get_planning_checker
+            from astream.scrapers.animesama.planning import get_planning_checker, get_today_anime_slugs
             checker = await get_planning_checker()
             slugs = await checker.get_current_planning_anime()
 
@@ -205,25 +205,70 @@ class CatalogService:
                 logger.warning("CATALOG EN COURS - Aucun anime dans le planning")
                 return []
 
-            logger.log("API", f"CATALOG EN COURS - {len(slugs)} anime dans le planning")
+            # Récupérer les sorties du jour pour les mettre en premier
+            today_slugs = set(await get_today_anime_slugs())
+            logger.log("API", f"CATALOG EN COURS - {len(slugs)} anime, {len(today_slugs)} aujourd'hui")
 
             homepage_anime = await self.animesama_api.get_homepage_content()
             homepage_by_slug = {a.get("slug", ""): a for a in homepage_anime}
 
+            # Trier: sorties du jour en premier
+            sorted_slugs = sorted(slugs, key=lambda s: (0 if s in today_slugs else 1))
+
             results = []
-            for slug in slugs:
+            for slug in sorted_slugs:
                 if slug in homepage_by_slug:
-                    results.append(homepage_by_slug[slug])
+                    anime = dict(homepage_by_slug[slug])
                 else:
-                    results.append({"slug": slug, "title": slug.replace("-", " ").title(), "genres": []})
+                    anime = {"slug": slug, "title": slug.replace("-", " ").title(), "genres": []}
+                if slug in today_slugs:
+                    anime["today_release"] = True
+                results.append(anime)
 
             enhanced = await self._enrich_catalog_with_tmdb(results, config)
             metas = await self._build_catalog_metas(request, b64config, enhanced, config, None, None)
-            logger.log("API", f"CATALOG EN COURS - {len(metas)} anime retournés")
+            logger.log("API", f"CATALOG EN COURS - {len(metas)} anime retournés ({len(today_slugs)} nouveautés du jour en tête)")
             return metas
 
         except Exception as e:
             logger.error(f"Erreur catalogue en cours: {e}")
+            return []
+
+    async def get_sorties_du_jour_catalog(self, request, b64config: str, config) -> List[Dict[str, Any]]:
+        """
+        Catalogue des anime qui diffusent un nouvel épisode aujourd'hui.
+        """
+        try:
+            from astream.scrapers.animesama.planning import get_today_anime_slugs
+            today_slugs = await get_today_anime_slugs()
+
+            if not today_slugs:
+                logger.warning("CATALOG SORTIES DU JOUR - Aucun anime aujourd'hui")
+                return []
+
+            logger.log("API", f"CATALOG SORTIES DU JOUR - {len(today_slugs)} anime aujourd'hui")
+
+            # Récupérer les données homepage pour avoir les images/infos
+            homepage_anime = await self.animesama_api.get_homepage_content()
+            homepage_by_slug = {a.get("slug", ""): a for a in homepage_anime}
+
+            results = []
+            for slug in today_slugs:
+                if slug in homepage_by_slug:
+                    anime = dict(homepage_by_slug[slug])
+                else:
+                    anime = {"slug": slug, "title": slug.replace("-", " ").title(), "genres": []}
+                # Marquer comme sortie du jour
+                anime["today_release"] = True
+                results.append(anime)
+
+            enhanced = await self._enrich_catalog_with_tmdb(results, config)
+            metas = await self._build_catalog_metas(request, b64config, enhanced, config, None, None)
+            logger.log("API", f"CATALOG SORTIES DU JOUR - {len(metas)} anime retournés")
+            return metas
+
+        except Exception as e:
+            logger.error(f"Erreur catalogue sorties du jour: {e}")
             return []
 
     async def get_nouveautes_catalog(self, request, b64config: str, config) -> List[Dict[str, Any]]:
@@ -256,4 +301,4 @@ class CatalogService:
 # Instance Singleton Globale
 # ===========================
 catalog_service = CatalogService()
-            
+        
