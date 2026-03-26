@@ -17,6 +17,16 @@ DAYS_FR = {
 }
 
 
+def _clean_slug(raw: str) -> str:
+    """Retourne uniquement le premier segment du slug (avant tout slash)."""
+    if not raw:
+        return ""
+    # Supprimer slash initial
+    raw = raw.lstrip("/")
+    # Prendre uniquement le premier segment
+    return raw.split("/")[0].strip()
+
+
 # ===========================
 # Classe AnimeSamaPlanning
 # ===========================
@@ -125,7 +135,9 @@ class AnimeSamaPlanning(BaseScraper):
         """Retourne les slugs des anime qui diffusent aujourd'hui."""
         today = datetime.now().weekday()  # 0=lundi
         by_day = await self.get_planning_by_day()
-        slugs = by_day.get(today, [])
+        raw_slugs = by_day.get(today, [])
+        # Sanitiser pour garantir qu'aucun slug ne contient de slash
+        slugs = [_clean_slug(s) for s in raw_slugs if _clean_slug(s)]
         logger.log("ANIMESAMA", f"Anime du jour (weekday={today}): {len(slugs)} trouvés")
         return slugs
 
@@ -172,7 +184,7 @@ class AnimeSamaPlanning(BaseScraper):
                         link = element if element.name == 'a' and element.get('href', '') else None
                     if link:
                         href = link.get('href', '')
-                        slug = href.split('/catalogue/')[-1].strip('/')
+                        slug = _clean_slug(href.split('/catalogue/')[-1])
                         if slug and current_day is not None:
                             if current_day not in result:
                                 result[current_day] = []
@@ -211,7 +223,7 @@ class AnimeSamaPlanning(BaseScraper):
                 while next_sib:
                     links = next_sib.find_all('a', href=lambda h: h and '/catalogue/' in h)
                     for link in links:
-                        slug = link.get('href', '').split('/catalogue/')[-1].strip('/')
+                        slug = _clean_slug(link.get('href', '').split('/catalogue/')[-1])
                         if slug:
                             result[day_idx].append(slug)
                     # Arrêter si on trouve un autre jour
@@ -288,4 +300,4 @@ async def get_smart_cache_ttl(anime_slug: str) -> int:
     except Exception as e:
         logger.warning(f"Erreur calcul TTL '{anime_slug}': {e}")
         return settings.ONGOING_ANIME_TTL
-                
+                        
