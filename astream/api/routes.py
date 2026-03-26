@@ -29,13 +29,15 @@ async def root() -> RedirectResponse:
 
 @main.get("/configure", summary="Configuration", description="Interface web pour configurer l'addon")
 async def configure(request: Request) -> Any:
+    config_data = dict(web_config)
+    config_data["ADDON_NAME"] = settings.ADDON_NAME
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "CUSTOM_HEADER_HTML": settings.CUSTOM_HEADER_HTML or "",
             "EXCLUDED_DOMAINS": get_all_excluded_domains(),
-            "webConfig": {**web_config, "ADDON_NAME": settings.ADDON_NAME},
+            "webConfig": config_data,
         },
     )
 
@@ -45,13 +47,15 @@ async def configure_addon(
     request: Request,
     b64config: str = Path(..., description="Configuration encodée en base64")
 ) -> Any:
+    config_data = dict(web_config)
+    config_data["ADDON_NAME"] = settings.ADDON_NAME
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "CUSTOM_HEADER_HTML": settings.CUSTOM_HEADER_HTML or "",
             "EXCLUDED_DOMAINS": get_all_excluded_domains(),
-            "webConfig": {**web_config, "ADDON_NAME": settings.ADDON_NAME},
+            "webConfig": config_data,
         },
     )
 
@@ -256,3 +260,4 @@ async def stream_default(
 @main.get("/health", summary="État de santé", description="Retourne l'état de santé actuel du service")
 async def health() -> Dict[str, str]:
     return {"status": "ok"}
+        
