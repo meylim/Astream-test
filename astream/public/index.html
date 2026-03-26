@@ -1,0 +1,2293 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ webConfig.ADDON_NAME }} – Addon Stremio pour Anime-Sama</title>
+    <meta content="{{ webConfig.ADDON_NAME }}" property="og:title" />
+    <meta content="{{ webConfig.ADDON_NAME }} – Addon non officiel pour Stremio" property="og:description" />
+    <meta content="#7c3aed" data-react-helmet="true" name="theme-color" />
+    <link rel="icon" type="image/x-icon" href="https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg">
+
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --primary-dark: #2563eb;
+            --secondary: #3b82f6;
+            --accent: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg-dark: #0a0a0a;
+            --bg-secondary: #111111;
+            --bg-card: #1a1a1a;
+            --bg-elevated: #262626;
+            --text-primary: #ffffff;
+            --text-secondary: #a3a3a3;
+            --text-muted: #737373;
+            --border: #404040;
+            --border-hover: #525252;
+            --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.6);
+            --gradient-primary: var(--primary);
+            --gradient-accent: var(--accent);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* ===========================
+           Navigation
+           =========================== */
+        .nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: rgba(10, 10, 10, 0.95);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            z-index: 1000;
+            padding: 0 2rem;
+        }
+
+        .nav-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            max-width: 1400px;
+            margin: 0 auto;
+            height: 70px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 800;
+            font-size: 1.5rem;
+            color: var(--primary);
+        }
+
+        .logo img {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+        }
+
+        .nav-menu {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .nav-item {
+            padding: 8px 16px;
+            border-radius: 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .nav-item:hover, .nav-item.active {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+
+        .nav-item.active {
+            background: var(--gradient-primary);
+            color: white;
+        }
+
+        /* ===========================
+           Mise en page principale
+           =========================== */
+        .main {
+            margin-top: 70px;
+            min-height: calc(100vh - 70px);
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+            max-width: 1400px;
+            margin-left: auto;
+            margin-right: auto;
+            padding: 2rem;
+        }
+        
+        .main.with-sidebar {
+            grid-template-columns: 1fr 350px;
+        }
+
+        .content {
+            min-height: calc(100vh - 140px);
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 90px;
+            height: fit-content;
+        }
+
+        /* ===========================
+           Pages
+           =========================== */
+        .page {
+            display: none;
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ===========================
+           Page d'accueil
+           =========================== */
+        .hero {
+            text-align: center;
+            padding: 4rem 0;
+            background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.1) 0%, transparent 50%);
+            border-radius: 24px;
+            margin-bottom: 3rem;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            font-weight: 800;
+            margin-bottom: 1rem;
+            color: var(--primary);
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            font-size: 0.95rem;
+        }
+
+        .btn-primary {
+            background: var(--gradient-primary);
+            color: white;
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-secondary {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-coffee {
+            background: #FFDD00;
+            color: #000000;
+            font-weight: 600;
+            box-shadow: var(--shadow-md);
+        }
+
+        .btn-coffee:hover {
+            background: #FFE500;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(255, 221, 0, 0.4);
+        }
+
+        /* ===========================
+           Cartes d'avertissement
+           =========================== */
+        .warnings {
+            display: grid;
+            gap: 1rem;
+            margin-bottom: 3rem;
+        }
+
+        .warning-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .warning-card.danger {
+            border: 2px solid var(--danger);
+            background: rgba(239, 68, 68, 0.05);
+        }
+
+        .warning-card.warning {
+            border: 2px solid var(--warning);
+            background: rgba(245, 158, 11, 0.05);
+        }
+
+        .warning-card.info {
+            border: 2px solid var(--secondary);
+            background: rgba(6, 182, 212, 0.05);
+        }
+
+        .warning-icon {
+            font-size: 1.2rem;
+            margin-top: 2px;
+        }
+
+        .warning-content h3 {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .warning-content p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ===========================
+           Grille de fonctionnalités
+           =========================== */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: var(--border-hover);
+            transform: translateY(-2px);
+        }
+
+        .feature-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 1rem;
+        }
+
+        .feature-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: var(--gradient-primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        .feature-card h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ===========================
+           Page d'informations
+           =========================== */
+        .info-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .info-section h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .copy-section-btn {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            font-size: 0.8rem;
+        }
+        
+        .copy-section-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .info-section h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 1.5rem 0 0.8rem 0;
+            color: var(--primary);
+        }
+
+        .info-section ul {
+            list-style: none;
+            margin-left: 0;
+        }
+
+        .info-section li {
+            margin-bottom: 0.8rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 0.95rem;
+        }
+
+        .info-section li::before {
+            content: "•";
+            color: var(--primary);
+            font-weight: bold;
+            margin-top: 2px;
+        }
+
+        .content-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .content-table th,
+        .content-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .content-table th {
+            background: var(--bg-elevated);
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .content-table td {
+            color: var(--text-secondary);
+        }
+
+        /* ===========================
+           Cartes de problèmes
+           =========================== */
+        .problem-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .problem-card:hover {
+            border-color: var(--primary);
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.1);
+        }
+
+        .problem-card h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 0 0 1rem 0;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .problem-card p {
+            margin: 0.8rem 0;
+            line-height: 1.6;
+        }
+
+        .github-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-card);
+            color: var(--primary);
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            font-weight: 500;
+            transition: all 0.2s ease;
+            font-size: 0.9rem;
+        }
+
+        .github-link:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            transform: translateY(-1px);
+        }
+
+        .solution-list {
+            list-style: none;
+            margin: 1rem 0 0 0;
+            padding: 0;
+        }
+
+        .solution-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 0.8rem;
+            padding: 8px 0;
+            font-size: 0.95rem;
+            line-height: 1.5;
+        }
+
+        .solution-list li i {
+            color: var(--accent);
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        /* ===========================
+           Grille de contenu
+           =========================== */
+        .content-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .content-card {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .content-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--primary);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+        }
+
+        .content-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            color: white;
+            font-size: 1.5rem;
+        }
+
+        .content-card h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 0 0 0.5rem 0;
+            color: var(--text-primary);
+        }
+
+        .season-number {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: 0.5rem 0;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+        }
+
+        .content-card p {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            margin: 0;
+        }
+
+        .info-note {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1.5rem;
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+
+        .info-note p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        /* ===========================
+           Groupe radio moderne
+           =========================== */
+        .modern-radio-group {
+            display: grid;
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+
+        .modern-radio-option {
+            position: relative;
+        }
+
+        .modern-radio-option input[type="radio"],
+        .modern-radio-option input[type="checkbox"] {
+            position: absolute;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .modern-radio-label {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.2rem;
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: var(--bg-elevated);
+        }
+
+        .modern-radio-label:hover {
+            border-color: var(--primary);
+            background: var(--bg-card);
+        }
+
+        .modern-radio-option input[type="radio"]:checked + .modern-radio-label,
+        .modern-radio-option input[type="checkbox"]:checked + .modern-radio-label {
+            border-color: var(--primary);
+            background: rgba(124, 58, 237, 0.05);
+        }
+
+        .modern-radio-label.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .modern-radio-option input:disabled + .modern-radio-label {
+            opacity: 0.5;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .radio-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--primary);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .radio-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+        }
+
+        .radio-content strong {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .radio-content span {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .order-selection h3 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .order-selection p {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        /* ===========================
+           Config Sidebar
+           =========================== */
+        .config-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 2rem;
+            position: sticky;
+            top: 90px;
+        }
+
+        .config-panel h3 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 0;
+        }
+
+        .form-label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .radio-option {
+            position: relative;
+        }
+
+        .radio-option input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--bg-elevated);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .radio-option input[type="radio"]:checked + .radio-label {
+            background: var(--gradient-primary);
+            color: white;
+            border-color: var(--primary);
+        }
+
+        .radio-option:hover .radio-label {
+            border-color: var(--border-hover);
+        }
+
+        /* ===========================
+           Sélection de l'ordre
+           =========================== */
+        .order-selection {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: var(--bg-elevated);
+            border-radius: 12px;
+            display: none;
+        }
+
+        .order-selection.active {
+            display: block;
+        }
+
+        .order-list {
+            list-style: none;
+            margin: 0;
+        }
+
+        .order-item {
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            user-select: none;
+            font-weight: 500;
+        }
+
+        .order-item span {
+            flex-grow: 1;
+            text-align: center;
+        }
+
+        .order-item:hover {
+            border-color: var(--primary);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .order-controls {
+            display: flex;
+            gap: 4px;
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .order-btn {
+            background: var(--bg-dark);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+            min-height: 32px;
+        }
+
+        .order-btn:hover {
+            background: var(--primary);
+            color: white;
+            border-color: var(--primary);
+            transform: translateY(-1px);
+        }
+
+        .order-btn:active {
+            transform: translateY(0);
+        }
+
+        .order-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .order-btn:disabled:hover {
+            background: var(--bg-dark);
+            color: var(--text-muted);
+            border-color: var(--border);
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        /* ===========================
+           Pied de page
+           =========================== */
+        .footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            padding: 2rem;
+            text-align: center;
+            margin-top: 4rem;
+        }
+
+        .footer p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* ===========================
+           Responsive mobile
+           =========================== */
+        @media (max-width: 1024px) {
+            .main {
+                grid-template-columns: 1fr;
+                gap: 2rem;
+            }
+
+            .sidebar {
+                position: relative;
+                top: 0;
+            }
+
+            .nav-container {
+                padding: 0 1rem;
+            }
+
+            .nav-menu {
+                gap: 0.25rem;
+            }
+
+            .nav-item {
+                padding: 6px 12px;
+                font-size: 0.8rem;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+
+            .hero p {
+                font-size: 1rem;
+            }
+
+            .hero-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .features {
+                grid-template-columns: 1fr;
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+            }
+
+            .content-card {
+                padding: 1.2rem;
+            }
+
+            .content-icon {
+                width: 50px;
+                height: 50px;
+                font-size: 1.2rem;
+            }
+
+            .season-number {
+                font-size: 1.5rem;
+            }
+
+            .modern-radio-label {
+                padding: 0.875rem;
+                gap: 0.75rem;
+            }
+
+            .radio-icon {
+                width: 40px;
+                height: 40px;
+                font-size: 1rem;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .main {
+                padding: 1rem;
+            }
+
+            .nav {
+                padding: 0 1rem;
+            }
+
+            .config-panel {
+                padding: 1.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .nav-item span {
+                display: none;
+            }
+
+            .hero h1 {
+                font-size: 2rem;
+            }
+
+            .warning-card {
+                padding: 1rem;
+            }
+
+            .info-section {
+                padding: 1.5rem;
+            }
+
+            .order-item {
+                padding: 16px 20px;
+                font-size: 1.1rem;
+            }
+
+            .order-btn {
+                min-width: 44px;
+                min-height: 44px;
+                font-size: 1.2rem;
+            }
+
+            .order-selection h3 {
+                font-size: 1.1rem;
+            }
+
+            .order-selection p {
+                font-size: 0.9rem;
+            }
+        }
+
+        /* ===========================
+           États succès/erreur
+           =========================== */
+        .success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 1rem;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .success.show {
+            display: flex;
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-top: 1rem;
+            display: none;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .error.show {
+            display: flex;
+        }
+
+        /* ===========================
+           Styles configuration TMDB
+           =========================== */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            margin-bottom: 1.5rem;
+        }
+        
+        .status-badge.success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+        }
+        
+        .status-badge.warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+        }
+        
+        .config-section {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+        }
+        
+        .form-help {
+            display: block;
+            margin-top: 8px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+        
+        .form-help a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+        
+        .form-help a:hover {
+            text-decoration: underline;
+        }
+        
+        .toggle-group {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        
+        .toggle-item {
+            background: var(--bg-card);
+            border: 2px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem;
+            transition: all 0.2s ease;
+        }
+        
+        .toggle-item:hover {
+            border-color: var(--border-hover);
+        }
+        
+        .toggle-label {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            cursor: pointer;
+            margin: 0;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 24px;
+            background: var(--border);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+        
+        .toggle-switch::after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: var(--text-primary);
+            border-radius: 50%;
+            transition: all 0.3s ease;
+        }
+        
+        input[type="checkbox"]:checked + .toggle-switch {
+            background: var(--primary);
+        }
+        
+        input[type="checkbox"]:checked + .toggle-switch::after {
+            transform: translateX(24px);
+        }
+        
+        .toggle-content {
+            flex: 1;
+        }
+        
+        .toggle-content h4 {
+            margin: 0 0 4px 0;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        
+        .toggle-content p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        
+        .toggle-label input[type="checkbox"] {
+            display: none;
+        }
+
+        /* ===========================
+           États de focus améliorés pour accessibilité
+           =========================== */
+        *:focus-visible {
+            outline: 3px solid var(--primary);
+            outline-offset: 3px;
+            box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.2);
+        }
+
+        .btn:focus-visible,
+        .nav-item:focus-visible,
+        .modern-radio-label:focus-within,
+        .order-btn:focus-visible {
+            outline: 3px solid var(--primary);
+            outline-offset: 2px;
+            box-shadow: 0 0 0 6px rgba(124, 58, 237, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <!-- ===========================
+         Navigation
+         =========================== -->
+    <nav class="nav">
+        <div class="nav-container">
+            <div class="logo">
+                <span>{{ webConfig.ADDON_NAME }}</span>
+            </div>
+            <div class="nav-menu">
+                <button class="nav-item active" data-page="home">
+                    <i data-lucide="home"></i>
+                    <span>Accueil</span>
+                </button>
+                <button class="nav-item" data-page="info">
+                    <i data-lucide="info"></i>
+                    <span>Informations</span>
+                </button>
+                <button class="nav-item" data-page="config">
+                    <i data-lucide="settings"></i>
+                    <span>Configuration</span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ===========================
+         Contenu principal
+         =========================== -->
+    <main class="main">
+        <div class="content">
+            <!-- ===========================
+                 Page d'accueil
+                 =========================== -->
+            <div class="page active" id="home">
+                <div class="hero">
+                    <h1>{{ webConfig.ADDON_NAME }}</h1>
+                    <p>Addon non officiel pour Stremio permettant de streamer les anime depuis Anime-Sama</p>
+                    <div class="hero-buttons">
+                        <a href="https://github.com/Dyhlio/astream" target="_blank" class="btn btn-primary">
+                            <i data-lucide="github"></i>
+                            Voir sur GitHub
+                        </a>
+                        <button class="btn btn-secondary" onclick="showPage('config')">
+                            <i data-lucide="settings"></i>
+                            Configurer l'addon
+                        </button>
+                    </div>
+                    <div style="display: flex; justify-content: center; margin-top: 1rem;">
+                        <a href="https://buymeacoffee.com/dyhlio" target="_blank" class="btn btn-coffee">
+                            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M20.216 6.415l-.132-.666c-.119-.598-.388-1.163-1.001-1.379-.197-.069-.42-.098-.57-.241-.152-.143-.196-.366-.231-.572-.065-.378-.125-.756-.192-1.133-.057-.325-.102-.69-.25-.987-.195-.4-.597-.634-.996-.788a5.723 5.723 0 00-.626-.194c-1-.263-2.05-.36-3.077-.416a25.834 25.834 0 00-3.7.062c-.915.083-1.88.184-2.75.5-.318.116-.646.256-.888.501-.297.302-.393.77-.177 1.146.154.267.415.456.692.58.36.162.737.284 1.123.366 1.075.238 2.189.331 3.287.37 1.218.05 2.437.01 3.65-.118.299-.033.598-.073.896-.119.352-.054.578-.513.474-.834-.124-.383-.457-.531-.834-.473-.466.074-.96.108-1.382.146-1.177.08-2.358.082-3.536.006a22.228 22.228 0 01-1.157-.107c-.086-.01-.18-.025-.258-.036-.243-.036-.484-.08-.724-.13-.111-.027-.111-.185 0-.212h.005c.277-.06.557-.108.838-.147h.002c.131-.009.263-.032.394-.048a25.076 25.076 0 013.426-.12c.674.019 1.347.067 2.017.144l.228.031c.267.04.533.088.798.145.392.085.895.113 1.07.542.055.137.08.288.111.431l.319 1.484a.237.237 0 01-.199.284h-.003c-.037.006-.075.01-.112.015a36.704 36.704 0 01-4.743.295 37.059 37.059 0 01-4.699-.304c-.14-.017-.293-.042-.417-.06-.326-.048-.649-.108-.973-.161-.393-.065-.768-.032-1.123.161-.29.16-.527.404-.675.701-.154.316-.199.66-.267 1-.069.34-.176.707-.135 1.056.087.753.613 1.365 1.37 1.502a39.69 39.69 0 0011.343.376.483.483 0 01.535.53l-.071.697-1.018 9.907c-.041.41-.047.832-.125 1.237-.122.637-.553 1.028-1.182 1.171-.577.131-1.165.2-1.756.205-.656.004-1.31-.025-1.966-.022-.699.004-1.556-.06-2.095-.58-.475-.458-.54-1.174-.605-1.793l-.731-7.013-.322-3.094c-.037-.351-.286-.695-.678-.678-.336.015-.718.3-.678.679l.228 2.185.949 9.112c.147 1.344 1.174 2.068 2.446 2.272.742.12 1.503.144 2.257.156.966.016 1.942.053 2.892-.122 1.408-.258 2.465-1.198 2.616-2.657.34-3.332.683-6.663 1.024-9.995l.215-2.087a.484.484 0 01.39-.426c.402-.078.787-.212 1.074-.518.455-.488.546-1.124.385-1.766zm-1.478.772c-.145.137-.363.201-.578.233-2.416.359-4.866.54-7.308.46-1.748-.06-3.477-.254-5.207-.498-.17-.024-.353-.055-.47-.18-.22-.236-.111-.71-.054-.995.052-.26.152-.609.463-.646.484-.057 1.046.148 1.526.22.577.088 1.156.177 1.735.261a34.01 34.01 0 007.358.048c.583-.077 1.175-.158 1.746-.283.191-.043.383-.089.578-.133.293-.067.461-.233.525-.532.064-.298-.077-.639-.356-.777-.859-.429-1.932-.386-2.916-.386-1.214 0-2.429.041-3.64.115a38.265 38.265 0 00-3.602.377c-.344.053-.686.115-1.027.189-.543.117-.935.385-.935.973 0 .504.312.813.811.97.424.133.867.192 1.305.247 1.408.177 2.828.281 4.246.32 3.015.084 6.034-.015 9.04-.339.15-.016.293-.036.434-.05.119-.013.215-.046.215-.19 0-.08-.05-.15-.123-.189-.023-.01-.05-.015-.076-.023z"/>
+                            </svg>
+                            Buy me a coffee
+                        </a>
+                    </div>
+                </div>
+
+                <!-- ===========================
+                     En-tête personnalisé
+                     =========================== -->
+                {% if CUSTOM_HEADER_HTML %}
+                <div class="warnings">
+                    <div class="warning-card info">
+                        <div class="warning-icon">ℹ️</div>
+                        <div class="warning-content">
+                            <h3>Information</h3>
+                            <div style="color: var(--text-secondary);">
+                                {{ CUSTOM_HEADER_HTML|safe }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="warnings">
+                    <div class="warning-card" style="border: 2px solid var(--accent); background: rgba(16, 185, 129, 0.05);">
+                        <div class="warning-icon">🐍</div>
+                        <div class="warning-content">
+                            <h3>Projet Open Source</h3>
+                            <p>Le code source est disponible sur GitHub sous licence MIT.</p>
+                        </div>
+                    </div>
+                    <div class="warning-card warning">
+                        <div class="warning-icon">⚖️</div>
+                        <div class="warning-content">
+                            <h3>Responsabilité de l'utilisateur</h3>
+                            <p>Utilisez cet addon à vos propres risques. Vérifiez la légalité dans votre juridiction.</p>
+                        </div>
+                    </div>
+                    <div class="warning-card danger">
+                        <div class="warning-icon">⚠️</div>
+                        <div class="warning-content">
+                            <h3>Non affilié à Anime-Sama</h3>
+                            <p>Cet addon est un projet indépendant. Nous ne sommes pas affiliés au site Anime-Sama.</p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- ===========================
+                 Page informations
+                 =========================== -->
+            <div class="page" id="info">
+                <div class="info-section" id="organisation">
+                    <h2>
+                        <i data-lucide="folder"></i>
+                        Organisation des Contenus
+                        <button class="copy-section-btn" onclick="copySection('organisation', event)" title="Copier le lien vers cette section">
+                            <i data-lucide="copy"></i>
+                        </button>
+                    </h2>
+                    <div class="content-grid">
+                        <div class="content-card">
+                            <div class="content-icon" style="background: var(--primary);">
+                                <i data-lucide="calendar"></i>
+                            </div>
+                            <h3>Saisons normales</h3>
+                            <div class="season-number">1, 2, 3...</div>
+                            <p>Numérotation standard des saisons principales</p>
+                        </div>
+                        
+                        <div class="content-card">
+                            <div class="content-icon" style="background: #8b5cf6;">
+                                <i data-lucide="layers"></i>
+                            </div>
+                            <h3>Sous-saisons</h3>
+                            <div class="season-number">4-2, 4-3...</div>
+                            <p>Intégrées dans la saison principale correspondante</p>
+                        </div>
+                        
+                        <div class="content-card">
+                            <div class="content-icon" style="background: #f59e0b;">
+                                <i data-lucide="film"></i>
+                            </div>
+                            <h3>Films</h3>
+                            <div class="season-number">990</div>
+                            <p>Tous les films liés à l'anime regroupés</p>
+                        </div>
+                        
+                        <div class="content-card">
+                            <div class="content-icon" style="background: #ef4444;">
+                                <i data-lucide="star"></i>
+                            </div>
+                            <h3>Hors-série</h3>
+                            <div class="season-number">991</div>
+                            <p>Épisodes hors-série</p>
+                        </div>
+                        
+                        <div class="content-card">
+                            <div class="content-icon" style="background: var(--accent);">
+                                <i data-lucide="sparkles"></i>
+                            </div>
+                            <h3>Spéciaux/OAV</h3>
+                            <div class="season-number">0</div>
+                            <p>OAV et épisodes spéciaux</p>
+                        </div>
+                    </div>
+                    
+                    <div class="info-note">
+                        <i data-lucide="info" style="color: var(--primary);"></i>
+                        <p><strong>Note Stremio :</strong> Ces numéros correspondent aux saisons où vous trouverez chaque type de contenu dans l'interface Stremio.</p>
+                    </div>
+                </div>
+
+                <div class="info-section" id="lecteurs">
+                    <h2>
+                        <i data-lucide="tv"></i>
+                        Lecteurs Vidéo
+                        <button class="copy-section-btn" onclick="copySection('lecteurs', event)" title="Copier le lien vers cette section">
+                            <i data-lucide="copy"></i>
+                        </button>
+                    </h2>
+                    <div class="problem-card">
+                        <h3><i data-lucide="check-circle"></i> Lecteurs Supportés</h3>
+                        <ul class="solution-list">
+                            <li><i data-lucide="play-circle"></i> <strong>Sibnet :</strong> Extraction avec contournement de protection</li>
+                            <li><i data-lucide="play-circle"></i> <strong>Vidmoly :</strong> Support complet</li>
+                            <li><i data-lucide="play-circle"></i> <strong>Sendvid :</strong> Support complet</li>
+                            <li><i data-lucide="play-circle"></i> <strong>Oneupload :</strong> Support complet</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="x-circle"></i> Lecteurs Non Supportés</h3>
+                        <ul class="solution-list">
+                            <li><i data-lucide="shield-x"></i> <strong>VK :</strong> Protection complexe</li>
+                            <li><i data-lucide="shield-x"></i> <strong>Moveanime :</strong> Protection complexe</li>
+                            <li><i data-lucide="shield-x"></i> <strong>Smoothanime :</strong> Protection complexe</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="filter"></i> Domaines Actuellement Exclus</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 8px; margin: 1rem 0;">
+                        {% if EXCLUDED_DOMAINS %}
+                            {% for domain in EXCLUDED_DOMAINS.split(',') %}
+                            <span style="
+                                background: var(--danger);
+                                color: white;
+                                padding: 6px 12px;
+                                border-radius: 20px;
+                                font-size: 0.85rem;
+                                font-weight: 500;
+                                font-family: monospace;
+                            ">{{ domain.strip() }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <span style="
+                                background: var(--accent);
+                                color: white;
+                                padding: 6px 12px;
+                                border-radius: 20px;
+                                font-size: 0.85rem;
+                                font-weight: 500;
+                            ">Aucun domaine exclu</span>
+                        {% endif %}
+                    </div>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="info"></i> Notes Importantes</h3>
+                        <p><strong>ℹ️ Compatibilité :</strong> D'autres lecteurs peuvent fonctionner mais n'ont pas été testés officiellement. Certains lecteurs peuvent également ne pas fonctionner.</p>
+                        <hr style="border: none; height: 1px; background: var(--border); margin: 1rem 0;">
+                        <p><strong>📝 Lecteurs manquants :</strong> Si vous voyez un lecteur sur Anime-Sama qui n'apparaît pas dans l'addon, c'est soit un lecteur non supporté, soit un domaine exclu de votre configuration.</p>
+                    </div>
+                </div>
+
+                <div class="info-section" id="problemes">
+                    <h2>
+                        <i data-lucide="alert-triangle"></i>
+                        Problèmes récurrents
+                        <button class="copy-section-btn" onclick="copySection('problemes', event)" title="Copier le lien vers cette section">
+                            <i data-lucide="copy"></i>
+                        </button>
+                    </h2>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="help-circle"></i> J'ai un problème avec mon épisode</h3>
+                        <p><strong>Solution :</strong> Essayez d'abord de changer de lecteur vidéo. Chaque épisode propose généralement plusieurs lecteurs différents.</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="loader"></i> La vidéo charge lentement</h3>
+                        <p><strong>Solution :</strong> Il arrive que les lecteurs vidéo soient saturés ou surchargés. Changez de lecteur pour en trouver un plus rapide.</p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="x-circle"></i> Aucun stream disponible</h3>
+                        <p><strong>Cause :</strong> Le lecteur sur Anime-Sama est cassé ou pas compatible avec notre addon.</p>
+                        <p><strong>Solution :</strong> 
+                            <a href="https://github.com/Dyhlio/astream/issues/new" target="_blank" class="github-link">
+                                <i data-lucide="github"></i>
+                                Ouvrez une issue sur GitHub
+                            </a> 
+                            pour faire la demande d'ajout de l'épisode manuellement.
+                        </p>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="list-checks"></i> Liste de solutions diverses</h3>
+                        <ul class="solution-list">
+                            <li><i data-lucide="wifi"></i> Vérifiez si votre connexion internet est bonne (téléchargements, chargement de vidéos, mises à jour...)</li>
+                            <li><i data-lucide="tv"></i> Changez de lecteur vidéo</li>
+                            <li><i data-lucide="clock"></i> Attendre 1h puis réessayer</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===========================
+                 Page configuration
+                 =========================== -->
+            <div class="page" id="config">
+                <div class="info-section">
+                    <h2>
+                        <i data-lucide="settings"></i>
+                        Configuration de l'Addon
+                    </h2>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="languages"></i> Préférence de langue</h3>
+                        <form id="configForm">
+                            <div class="modern-radio-group">
+                                <div class="modern-radio-option">
+                                    <input type="radio" id="langAll" name="language" value="Tout" checked>
+                                    <label for="langAll" class="modern-radio-label">
+                                        <div class="radio-icon">
+                                            <i data-lucide="globe"></i>
+                                        </div>
+                                        <div class="radio-content">
+                                            <strong>Tout afficher</strong>
+                                            <span>Affiche tous les streams avec ordre de priorité</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div class="modern-radio-option">
+                                    <input type="radio" id="langVOSTFR" name="language" value="VOSTFR">
+                                    <label for="langVOSTFR" class="modern-radio-label">
+                                        <div class="radio-icon">
+                                            <i data-lucide="subtitles"></i>
+                                        </div>
+                                        <div class="radio-content">
+                                            <strong>VOSTFR uniquement</strong>
+                                            <span>Affiche seulement les anime sous-titrés</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div class="modern-radio-option">
+                                    <input type="radio" id="langVF" name="language" value="VF">
+                                    <label for="langVF" class="modern-radio-label">
+                                        <div class="radio-icon">
+                                            <i data-lucide="volume-2"></i>
+                                        </div>
+                                        <div class="radio-content">
+                                            <strong>VF uniquement</strong>
+                                            <span>Affiche seulement les anime doublés français</span>
+                                        </div>
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            <div class="order-selection" id="orderSelection">
+                                <h3><i data-lucide="move-vertical"></i> Ordre de priorité des langues</h3>
+                                <p>Utilisez les boutons pour réorganiser l'ordre d'apparition des streams</p>
+                                <ul class="order-list" id="orderList">
+                                    <li class="order-item" data-lang="VOSTFR">
+                                        <span>VOSTFR</span>
+                                        <div class="order-controls">
+                                            <button class="order-btn move-down" title="Descendre">
+                                                <i data-lucide="chevron-down"></i>
+                                            </button>
+                                        </div>
+                                    </li>
+                                    <li class="order-item" data-lang="VF">
+                                        <span>VF</span>
+                                        <div class="order-controls">
+                                            <button class="order-btn move-up" title="Monter">
+                                                <i data-lucide="chevron-up"></i>
+                                            </button>
+                                        </div>
+                                    </li>
+                                </ul>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="database"></i> Configuration TMDB</h3>
+                        <p>TMDB (The Movie Database) améliore les métadonnées avec des images, descriptions et trailers.</p>
+                        
+                        {% if webConfig.tmdb.enabled %}
+                        <div class="success show">
+                            <i data-lucide="check-circle"></i>
+                            Clé API TMDB configurée par l'hôte
+                        </div>
+                        {% else %}
+                        <div class="error show">
+                            <i data-lucide="alert-triangle"></i>
+                            Aucune clé API TMDB configurée par l'hôte
+                        </div>
+                        {% endif %}
+                        
+                        <div class="info-note">
+                            <i data-lucide="lightbulb" style="color: var(--warning);"></i>
+                            <p><strong>Recommandé :</strong> Activez les fonctionnalités TMDB ci-dessous pour une meilleure expérience avec des métadonnées enrichies.</p>
+                        </div>
+                        
+                        <div style="margin-top: 2rem;"></div>
+                        
+                        <div class="config-section">
+                            <label class="form-label">
+                                <i data-lucide="key"></i>
+                                Votre clé API TMDB (optionnelle)
+                            </label>
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input 
+                                    type="password" 
+                                    id="tmdbApiKey" 
+                                    class="form-input" 
+                                    placeholder="Collez votre clé API TMDB ici..."
+                                    maxlength="200"
+                                    style="flex:1;"
+                                >
+                                <button type="button" id="tmdbTestBtn" onclick="testTmdbKey()" 
+                                    style="padding:8px 14px;border-radius:8px;border:1px solid var(--primary);background:transparent;color:var(--primary);cursor:pointer;white-space:nowrap;font-size:0.85rem;">
+                                    Tester
+                                </button>
+                            </div>
+                            <div id="tmdbTestResult" style="margin-top:6px;font-size:0.85rem;display:none;"></div>
+                            <small class="form-help">
+                                Si fournie, votre clé sera utilisée à la place de celle de l'hôte. 
+                                <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Obtenir une clé API gratuite</a>
+                            </small>
+                        </div>
+                        
+                        {% if not webConfig.tmdb.enabled %}
+                        <div class="info-note" id="tmdbRequiredNote" style="border: 1px solid var(--warning); background: rgba(245, 158, 11, 0.1);">
+                            <i data-lucide="key" style="color: var(--warning);"></i>
+                            <p><strong>Clé API requise :</strong> Veuillez remplir votre clé API TMDB ci-dessus pour activer ces options.</p>
+                        </div>
+                        {% endif %}
+                        
+                        <div class="modern-radio-group" id="tmdbOptionsGroup">
+                            <div class="modern-radio-option">
+                                <input type="checkbox" id="tmdbEnabled" {% if not webConfig.tmdb.enabled %}disabled{% endif %}>
+                                <label for="tmdbEnabled" class="modern-radio-label {% if not webConfig.tmdb.enabled %}disabled{% endif %}">
+                                    <div class="radio-icon">
+                                        <i data-lucide="image"></i>
+                                    </div>
+                                    <div class="radio-content">
+                                        <strong>Activer les métadonnées TMDB <span style="color: var(--warning); font-size: 0.8rem; font-weight: 500;">(Recommandé)</span></strong>
+                                        <span>Remplace les images et descriptions par celles de TMDB</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-radio-option">
+                                <input type="checkbox" id="tmdbEpisodeMapping" {% if not webConfig.tmdb.enabled %}disabled{% endif %}>
+                                <label for="tmdbEpisodeMapping" class="modern-radio-label {% if not webConfig.tmdb.enabled %}disabled{% endif %}">
+                                    <div class="radio-icon">
+                                        <i data-lucide="zap"></i>
+                                    </div>
+                                    <div class="radio-content">
+                                        <strong>Mapping intelligent des épisodes <span style="color: var(--warning); font-size: 0.8rem; font-weight: 500;">(Recommandé)</span></strong>
+                                        <span>Utilise les titres et descriptions d'épisodes TMDB</span>
+                                    </div>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="x-circle"></i> Exclusions Personnalisées</h3>
+                        <p>Ajoutez vos propres exclusions (domaines, mots-clés, formats) en plus de celles de l'hôte.</p>
+                        
+                        <div style="margin: 1rem 0;">
+                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 1rem;">
+                                <input 
+                                    type="text" 
+                                    id="userExclusionInput"
+                                    placeholder="ex: domaine.fr, m3u8, 720p..." 
+                                    class="form-input"
+                                    style="flex: 1;"
+                                >
+                                <button 
+                                    type="button" 
+                                    id="addExclusionBtn"
+                                    class="btn btn-secondary"
+                                    style="padding: 8px 16px; white-space: nowrap;"
+                                >
+                                    <i data-lucide="plus"></i>
+                                    Ajouter
+                                </button>
+                            </div>
+                            
+                            <div id="userExclusionsList" style="display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; align-items: flex-start;">
+                                <span style="
+                                    background: var(--accent);
+                                    color: white;
+                                    padding: 6px 12px;
+                                    border-radius: 20px;
+                                    font-size: 0.85rem;
+                                    font-weight: 500;
+                                " id="noExclusionsText">Aucune exclusion personnalisée</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="problem-card">
+                        <h3><i data-lucide="download"></i> Installation</h3>
+                        <p>Cliquez sur le bouton ci-dessous pour installer l'addon dans Stremio avec vos préférences.</p>
+                        
+                        <div class="action-buttons">
+                            <button type="button" class="btn btn-primary" id="installBtn">
+                                <i data-lucide="download"></i>
+                                Installer sur Stremio
+                            </button>
+                            <button type="button" class="btn btn-secondary" id="copyBtn">
+                                <i data-lucide="copy"></i>
+                                Copier le lien
+                            </button>
+                        </div>
+
+                        <div class="success" id="successMessage">
+                            <i data-lucide="check-circle"></i>
+                            Lien copié dans le presse-papiers !
+                        </div>
+                        <div class="error" id="errorMessage">
+                            <i data-lucide="x-circle"></i>
+                            Erreur lors de la copie du lien.
+                        </div>
+
+                        <div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid var(--border); text-align: center;">
+                            <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.95rem;">
+                                ❤️ Vous aimez cet addon ? Soutenez le projet !
+                            </p>
+                            <a href="https://buymeacoffee.com/dyhlio" target="_blank" class="btn btn-coffee">
+                                <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M20.216 6.415l-.132-.666c-.119-.598-.388-1.163-1.001-1.379-.197-.069-.42-.098-.57-.241-.152-.143-.196-.366-.231-.572-.065-.378-.125-.756-.192-1.133-.057-.325-.102-.69-.25-.987-.195-.4-.597-.634-.996-.788a5.723 5.723 0 00-.626-.194c-1-.263-2.05-.36-3.077-.416a25.834 25.834 0 00-3.7.062c-.915.083-1.88.184-2.75.5-.318.116-.646.256-.888.501-.297.302-.393.77-.177 1.146.154.267.415.456.692.58.36.162.737.284 1.123.366 1.075.238 2.189.331 3.287.37 1.218.05 2.437.01 3.65-.118.299-.033.598-.073.896-.119.352-.054.578-.513.474-.834-.124-.383-.457-.531-.834-.473-.466.074-.96.108-1.382.146-1.177.08-2.358.082-3.536.006a22.228 22.228 0 01-1.157-.107c-.086-.01-.18-.025-.258-.036-.243-.036-.484-.08-.724-.13-.111-.027-.111-.185 0-.212h.005c.277-.06.557-.108.838-.147h.002c.131-.009.263-.032.394-.048a25.076 25.076 0 013.426-.12c.674.019 1.347.067 2.017.144l.228.031c.267.04.533.088.798.145.392.085.895.113 1.07.542.055.137.08.288.111.431l.319 1.484a.237.237 0 01-.199.284h-.003c-.037.006-.075.01-.112.015a36.704 36.704 0 01-4.743.295 37.059 37.059 0 01-4.699-.304c-.14-.017-.293-.042-.417-.06-.326-.048-.649-.108-.973-.161-.393-.065-.768-.032-1.123.161-.29.16-.527.404-.675.701-.154.316-.199.66-.267 1-.069.34-.176.707-.135 1.056.087.753.613 1.365 1.37 1.502a39.69 39.69 0 0011.343.376.483.483 0 01.535.53l-.071.697-1.018 9.907c-.041.41-.047.832-.125 1.237-.122.637-.553 1.028-1.182 1.171-.577.131-1.165.2-1.756.205-.656.004-1.31-.025-1.966-.022-.699.004-1.556-.06-2.095-.58-.475-.458-.54-1.174-.605-1.793l-.731-7.013-.322-3.094c-.037-.351-.286-.695-.678-.678-.336.015-.718.3-.678.679l.228 2.185.949 9.112c.147 1.344 1.174 2.068 2.446 2.272.742.12 1.503.144 2.257.156.966.016 1.942.053 2.892-.122 1.408-.258 2.465-1.198 2.616-2.657.34-3.332.683-6.663 1.024-9.995l.215-2.087a.484.484 0 01.39-.426c.402-.078.787-.212 1.074-.518.455-.488.546-1.124.385-1.766zm-1.478.772c-.145.137-.363.201-.578.233-2.416.359-4.866.54-7.308.46-1.748-.06-3.477-.254-5.207-.498-.17-.024-.353-.055-.47-.18-.22-.236-.111-.71-.054-.995.052-.26.152-.609.463-.646.484-.057 1.046.148 1.526.22.577.088 1.156.177 1.735.261a34.01 34.01 0 007.358.048c.583-.077 1.175-.158 1.746-.283.191-.043.383-.089.578-.133.293-.067.461-.233.525-.532.064-.298-.077-.639-.356-.777-.859-.429-1.932-.386-2.916-.386-1.214 0-2.429.041-3.64.115a38.265 38.265 0 00-3.602.377c-.344.053-.686.115-1.027.189-.543.117-.935.385-.935.973 0 .504.312.813.811.97.424.133.867.192 1.305.247 1.408.177 2.828.281 4.246.32 3.015.084 6.034-.015 9.04-.339.15-.016.293-.036.434-.05.119-.013.215-.046.215-.19 0-.08-.05-.15-.123-.189-.023-.01-.05-.015-.076-.023z"/>
+                                </svg>
+                                Buy me a coffee
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ===========================
+         Pied de page
+         =========================== -->
+    <footer class="footer">
+        <p>Fait avec ❤️ pour la communauté anime française</p>
+    </footer>
+
+    <!-- ===========================
+         Scripts
+         =========================== -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.447.0/umd/lucide.min.js"></script>
+    <script>
+        function initLucide() {
+            if (window.lucide) {
+                if (window.lucide) { lucide.createIcons(); }
+            }
+        }
+
+        function showPage(pageId) {
+            document.querySelectorAll('.page').forEach(page => {
+                page.classList.remove('active');
+            });
+
+            document.getElementById(pageId).classList.add('active');
+
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+
+            document.querySelector(`[data-page="${pageId}"]`).classList.add('active');
+
+            document.documentElement.scrollTop = 0;
+            document.body.scrollTop = 0;
+
+            if (pageId === 'home') {
+                window.history.replaceState(null, null, window.location.pathname);
+            } else {
+                window.history.replaceState(null, null, `#${pageId}`);
+            }
+        }
+
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const pageId = item.dataset.page;
+                showPage(pageId);
+            });
+        });
+
+        document.querySelectorAll('input[name="language"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const orderSelection = document.getElementById('orderSelection');
+                if (radio.value === 'Tout') {
+                    orderSelection.classList.add('active');
+                } else {
+                    orderSelection.classList.remove('active');
+                }
+            });
+        });
+
+        function initializeOrderButtons() {
+            function updateButtons() {
+                const items = document.querySelectorAll('.order-item');
+                items.forEach((item, index) => {
+                    const controls = item.querySelector('.order-controls');
+                    controls.innerHTML = '';
+
+                    if (items.length === 2) {
+                        // Avec seulement 2 éléments, chacun a un bouton
+                        if (index === 1) {
+                            const upBtn = document.createElement('button');
+                            upBtn.className = 'order-btn move-up';
+                            upBtn.title = 'Passer en 1ère position';
+                            upBtn.innerHTML = '<i data-lucide="arrow-up"></i>';
+                            controls.appendChild(upBtn);
+                        } else {
+                            const downBtn = document.createElement('button');
+                            downBtn.className = 'order-btn move-down';
+                            downBtn.title = 'Passer en 2ème position';
+                            downBtn.innerHTML = '<i data-lucide="arrow-down"></i>';
+                            controls.appendChild(downBtn);
+                        }
+                    } else {
+                        if (index === 0) {
+                            const downBtn = document.createElement('button');
+                            downBtn.className = 'order-btn move-down';
+                            downBtn.title = 'Descendre';
+                            downBtn.innerHTML = '<i data-lucide="chevron-down"></i>';
+                            controls.appendChild(downBtn);
+                        } else if (index === items.length - 1) {
+                            const upBtn = document.createElement('button');
+                            upBtn.className = 'order-btn move-up';
+                            upBtn.title = 'Monter';
+                            upBtn.innerHTML = '<i data-lucide="chevron-up"></i>';
+                            controls.appendChild(upBtn);
+                        } else {
+                            const upBtn = document.createElement('button');
+                            upBtn.className = 'order-btn move-up';
+                            upBtn.title = 'Monter';
+                            upBtn.innerHTML = '<i data-lucide="chevron-up"></i>';
+
+                            const downBtn = document.createElement('button');
+                            downBtn.className = 'order-btn move-down';
+                            downBtn.title = 'Descendre';
+                            downBtn.innerHTML = '<i data-lucide="chevron-down"></i>';
+
+                            controls.appendChild(upBtn);
+                            controls.appendChild(downBtn);
+                        }
+                    }
+                });
+
+                if (window.lucide) {
+                    if (window.lucide) { lucide.createIcons(); }
+                }
+
+                addButtonListeners();
+            }
+            
+            function addButtonListeners() {
+                document.querySelectorAll('.move-up').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const item = btn.closest('.order-item');
+                        const prevItem = item.previousElementSibling;
+                        if (prevItem) {
+                            item.parentNode.insertBefore(item, prevItem);
+                            updateButtons();
+                        }
+                    });
+                });
+                
+                document.querySelectorAll('.move-down').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        const item = btn.closest('.order-item');
+                        const nextItem = item.nextElementSibling;
+                        if (nextItem) {
+                            item.parentNode.insertBefore(nextItem, item);
+                            updateButtons();
+                        }
+                    });
+                });
+            }
+
+            updateButtons();
+        }
+
+        initializeOrderButtons();
+
+        function getConfig() {
+            const formData = new FormData(document.getElementById('configForm'));
+            const config = {};
+
+            for (let [key, value] of formData.entries()) {
+                config[key] = value;
+            }
+
+            if (config.language === 'Tout') {
+                const orderItems = document.querySelectorAll('.order-item');
+                config.languageOrder = Array.from(orderItems).map(item => item.dataset.lang).join(',');
+            }
+
+            const tmdbApiKey = document.getElementById('tmdbApiKey')?.value?.trim();
+            const tmdbEnabled = document.getElementById('tmdbEnabled')?.checked;
+            const tmdbEpisodeMapping = document.getElementById('tmdbEpisodeMapping')?.checked;
+
+            if (tmdbApiKey) {
+                config.tmdbApiKey = tmdbApiKey;
+            }
+
+            if (tmdbEnabled !== undefined) {
+                config.tmdbEnabled = tmdbEnabled;
+            }
+
+            if (tmdbEpisodeMapping !== undefined) {
+                config.tmdbEpisodeMapping = tmdbEpisodeMapping;
+            }
+
+            if (userExclusions && userExclusions.length > 0) {
+                config.userExcludedDomains = userExclusions.join(',');
+            }
+            
+            return config;
+        }
+
+        function isDefaultConfig(config) {
+            // Configuration par défaut : Tout pour langue, TMDB activé si disponible, mapping désactivé
+            return (
+                (config.language === 'Tout' || !config.language) &&
+                !config.languageOrder &&
+                !config.tmdbApiKey &&
+                (config.tmdbEnabled === true || config.tmdbEnabled === undefined) &&
+                (config.tmdbEpisodeMapping === false || config.tmdbEpisodeMapping === undefined)
+            );
+        }
+
+        function getManifestUrl() {
+            const config = getConfig();
+            const baseUrl = window.location.origin;
+            
+            if (isDefaultConfig(config)) {
+                return `${baseUrl}/manifest.json`;
+            }
+            
+            const configStr = btoa(JSON.stringify(config));
+            return `${baseUrl}/${configStr}/manifest.json`;
+        }
+
+        function getStremioUrl() {
+            const config = getConfig();
+            const baseUrl = window.location.host;
+            
+            if (isDefaultConfig(config)) {
+                return `stremio://${baseUrl}/manifest.json`;
+            }
+            
+            const configStr = btoa(JSON.stringify(config));
+            return `stremio://${baseUrl}/${configStr}/manifest.json`;
+        }
+
+        document.getElementById('installBtn').addEventListener('click', () => {
+            const stremioUrl = getStremioUrl();
+            window.open(stremioUrl, '_blank');
+        });
+
+        document.getElementById('copyBtn').addEventListener('click', async () => {
+            const manifestUrl = getManifestUrl();
+            const successMessage = document.getElementById('successMessage');
+            const errorMessage = document.getElementById('errorMessage');
+            
+            try {
+                await navigator.clipboard.writeText(manifestUrl);
+                successMessage.classList.add('show');
+                errorMessage.classList.remove('show');
+                
+                setTimeout(() => {
+                    successMessage.classList.remove('show');
+                }, 3000);
+            } catch (err) {
+                errorMessage.classList.add('show');
+                successMessage.classList.remove('show');
+                
+                setTimeout(() => {
+                    errorMessage.classList.remove('show');
+                }, 3000);
+            }
+        });
+
+        document.getElementById('orderSelection').classList.add('active');
+
+        function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (!element) return;
+
+            setTimeout(() => {
+                const navHeight = 70;
+                const targetPosition = element.offsetTop - navHeight - 20;
+                window.scrollTo(0, Math.max(0, targetPosition));
+            }, 100);
+        }
+
+        function initializeFromHash() {
+            const hash = window.location.hash.slice(1);
+            if (hash === 'info' || hash === 'organisation' || hash === 'lecteurs' || hash === 'problemes') {
+                showPage('info');
+                if (hash === 'organisation' || hash === 'lecteurs' || hash === 'problemes') {
+                    scrollToSection(hash);
+                }
+            } else if (hash === 'config') {
+                showPage('config');
+            } else {
+                showPage('home');
+            }
+        }
+
+        window.addEventListener('popstate', initializeFromHash);
+
+        // Init Lucide icons + page once DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                initLucide();
+                initializeFromHash();
+            });
+        } else {
+            initLucide();
+            initializeFromHash();
+        }
+
+        function copySection(sectionId, event) {
+            const url = `${window.location.origin}${window.location.pathname}#${sectionId}`;
+
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url)
+                    .then(() => {
+                        showCopySuccess(event.target);
+                        showToast('Lien copié dans le presse-papiers !');
+                    })
+                    .catch(() => {
+                        copyWithFallback(url, event.target);
+                    });
+            } else {
+                copyWithFallback(url, event.target);
+            }
+        }
+
+        function copyWithFallback(text, target) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed';
+            textArea.style.left = '-999999px';
+            textArea.style.top = '-999999px';
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showCopySuccess(target);
+                    showToast('Lien copié dans le presse-papiers !');
+                } else {
+                    throw new Error('execCommand failed');
+                }
+            } catch (err) {
+                console.error('Erreur copie:', err);
+                showToast('Impossible de copier le lien', true);
+                prompt('Copiez ce lien manuellement :', text);
+            } finally {
+                document.body.removeChild(textArea);
+            }
+        }
+
+        function showCopySuccess(target) {
+            const button = target.closest('button');
+            const originalHTML = button.innerHTML;
+
+            button.style.background = 'var(--accent)';
+            button.style.color = 'white';
+            button.style.borderColor = 'var(--accent)';
+            button.innerHTML = '<i data-lucide="check"></i>';
+
+            if (window.lucide) { lucide.createIcons(); }
+
+            setTimeout(() => {
+                button.style.background = '';
+                button.style.color = '';
+                button.style.borderColor = '';
+                button.innerHTML = originalHTML;
+                if (window.lucide) { lucide.createIcons(); }
+            }, 1500);
+        }
+
+        function showToast(message, isError = false) {
+            const existingToasts = document.querySelectorAll('.toast-notification');
+            existingToasts.forEach(toast => toast.remove());
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification';
+            toast.style.cssText = `
+                position: fixed;
+                top: 90px;
+                right: 20px;
+                background: ${isError ? 'var(--danger)' : 'var(--accent)'};
+                color: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                font-size: 0.95rem;
+                font-weight: 500;
+                z-index: 10000;
+                box-shadow: var(--shadow-lg);
+                animation: none;
+                max-width: 300px;
+                word-wrap: break-word;
+            `;
+            toast.textContent = message;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                if (toast && toast.parentNode) {
+                    toast.style.opacity = '0';
+                    setTimeout(() => {
+                        if (toast && toast.parentNode) {
+                            document.body.removeChild(toast);
+                        }
+                    }, 400);
+                }
+            }, 3000);
+        }
+
+        function toggleTmdbOptions() {
+            const tmdbApiKey = document.getElementById('tmdbApiKey')?.value?.trim();
+            const hasHostKey = {% if webConfig.tmdb.enabled %}true{% else %}false{% endif %};
+            const hasUserKey = tmdbApiKey && tmdbApiKey.length > 0;
+            const shouldEnable = hasHostKey || hasUserKey;
+
+            const tmdbEnabled = document.getElementById('tmdbEnabled');
+            const tmdbEpisodeMapping = document.getElementById('tmdbEpisodeMapping');
+            const requiredNote = document.getElementById('tmdbRequiredNote');
+
+            if (tmdbEnabled) {
+                tmdbEnabled.disabled = !shouldEnable;
+                tmdbEnabled.parentElement.querySelector('.modern-radio-label').classList.toggle('disabled', !shouldEnable);
+            }
+
+            if (tmdbEpisodeMapping) {
+                tmdbEpisodeMapping.disabled = !shouldEnable;
+                tmdbEpisodeMapping.parentElement.querySelector('.modern-radio-label').classList.toggle('disabled', !shouldEnable);
+            }
+
+            if (requiredNote) {
+                if (shouldEnable) {
+                    requiredNote.style.display = 'none';
+                } else {
+                    requiredNote.style.display = 'flex';
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const tmdbApiKeyInput = document.getElementById('tmdbApiKey');
+            if (tmdbApiKeyInput) {
+                tmdbApiKeyInput.addEventListener('input', toggleTmdbOptions);
+                toggleTmdbOptions();
+            }
+        });
+
+        let userExclusions = [];
+
+        function addUserExclusion() {
+            const input = document.getElementById('userExclusionInput');
+            const value = input.value.trim();
+            
+            if (!value) {
+                showToast('Veuillez saisir une exclusion', true);
+                return;
+            }
+            
+            if (value.includes(' ')) {
+                showToast('Espaces non autorisés dans les exclusions', true);
+                input.value = value.replace(/\s/g, ''); // Supprime les espaces
+                return;
+            }
+            
+            if (userExclusions.includes(value)) {
+                showToast('Cette exclusion existe déjà', true);
+                return;
+            }
+            
+            userExclusions.push(value);
+            input.value = '';
+            updateUserExclusionsDisplay();
+            showToast('Exclusion ajoutée');
+        }
+
+        function removeUserExclusion(exclusion) {
+            userExclusions = userExclusions.filter(e => e !== exclusion);
+            updateUserExclusionsDisplay();
+            showToast('Exclusion supprimée');
+        }
+
+        function updateUserExclusionsDisplay() {
+            const container = document.getElementById('userExclusionsList');
+            const noExclusionsText = document.getElementById('noExclusionsText');
+
+            if (userExclusions.length === 0) {
+                container.innerHTML = '<span style="background: var(--accent); color: white; padding: 6px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 500;" id="noExclusionsText">Aucune exclusion personnalisée</span>';
+                return;
+            }
+
+            const escapeHtml = (str) => {
+                const div = document.createElement('div');
+                div.textContent = str;
+                return div.innerHTML;
+            };
+
+            container.innerHTML = userExclusions.map(exclusion => {
+                const escaped = escapeHtml(exclusion);
+                return `
+                <span style="
+                    background: var(--danger);
+                    color: white;
+                    padding: 6px 12px;
+                    border-radius: 20px;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                    font-family: monospace;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    cursor: pointer;
+                " onclick="removeUserExclusion('${escaped}')">
+                    ${escaped}
+                    <i data-lucide="x" style="width: 14px; height: 14px;"></i>
+                </span>
+                `;
+            }).join('');
+
+            if (window.lucide) { lucide.createIcons(); }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const input = document.getElementById('userExclusionInput');
+            const button = document.getElementById('addExclusionBtn');
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === ' ') {
+                    e.preventDefault();
+                    showToast('Espaces non autorisés', true);
+                    return false;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addUserExclusion();
+                }
+            });
+
+            button.addEventListener('click', addUserExclusion);
+        });
+
+        // ===========================
+        // Test cle TMDB
+        // ===========================
+        async function testTmdbKey() {
+            const key = document.getElementById('tmdbApiKey').value.trim();
+            const resultDiv = document.getElementById('tmdbTestResult');
+            const btn = document.getElementById('tmdbTestBtn');
+
+            if (!key) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<span style="color:var(--warning)">Saisissez une cle avant de tester.</span>';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<span style="color:#aaa">Verification en cours...</span>';
+
+            try {
+                const res = await fetch('/api/test-tmdb?key=' + encodeURIComponent(key));
+                const data = await res.json();
+
+                if (data.valid) {
+                    resultDiv.innerHTML = '<span style="color:var(--accent)">OK - Cle valide ! Les metadonnees TMDB sont activees.</span>';
+                    const tmdbEn = document.getElementById('tmdbEnabled');
+                    const tmdbEp = document.getElementById('tmdbEpisodeMapping');
+                    if (tmdbEn) { tmdbEn.disabled = false; }
+                    if (tmdbEp) { tmdbEp.disabled = false; }
+                    document.querySelectorAll('.modern-radio-label.disabled').forEach(el => el.classList.remove('disabled'));
+                    const note = document.getElementById('tmdbRequiredNote');
+                    if (note) note.style.display = 'none';
+                } else {
+                    resultDiv.innerHTML = '<span style="color:var(--danger)">Cle invalide : ' + (data.error || 'Erreur inconnue') + '</span>';
+                }
+            } catch (e) {
+                resultDiv.innerHTML = '<span style="color:var(--danger)">Erreur reseau : ' + e.message + '</span>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Tester';
+            }
+        }
+
+            </script>
+</body>
+</html>
