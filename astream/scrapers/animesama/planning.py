@@ -17,14 +17,23 @@ DAYS_FR = {
 }
 
 
+SCAN_KEYWORDS = {"scan", "manga", "light-novel", "novel", "webtoon"}
+
+
 def _clean_slug(raw: str) -> str:
     """Retourne uniquement le premier segment du slug (avant tout slash)."""
     if not raw:
         return ""
-    # Supprimer slash initial
     raw = raw.lstrip("/")
-    # Prendre uniquement le premier segment
     return raw.split("/")[0].strip()
+
+
+def _is_scan_path(raw: str) -> bool:
+    """Retourne True si le chemin contient un segment scan/manga/novel/webtoon."""
+    if not raw:
+        return False
+    segments = raw.lower().lstrip("/").split("/")
+    return any(seg in SCAN_KEYWORDS for seg in segments)
 
 
 # ===========================
@@ -84,8 +93,13 @@ class AnimeSamaPlanning(BaseScraper):
             pattern = r'anime-card[^"]*planning-card"[^>]*>[\s\S]*?href="/catalogue/([^/"]+)'
             matches = re.findall(pattern, html_content)
 
+            # Récupérer aussi le contexte pour filtrer les scans
+            scan_pattern = r'href="/catalogue/[^"]*?/scan/'
+            scan_hrefs = set(re.findall(r'href="/catalogue/([^/"]+)', 
+                ''.join(re.findall(r'href="/catalogue/[^"]*scan[^"]*"', html_content))))
+
             for slug in matches:
-                if slug:
+                if slug and slug not in scan_hrefs:
                     anime_slugs.add(slug)
 
             logger.debug(f"Slugs planning extraits: {sorted(anime_slugs)}")
@@ -136,9 +150,12 @@ class AnimeSamaPlanning(BaseScraper):
         today = datetime.now().weekday()  # 0=lundi
         by_day = await self.get_planning_by_day()
         raw_slugs = by_day.get(today, [])
-        # Sanitiser pour garantir qu'aucun slug ne contient de slash
-        slugs = [_clean_slug(s) for s in raw_slugs if _clean_slug(s)]
-        logger.log("ANIMESAMA", f"Anime du jour (weekday={today}): {len(slugs)} trouvés")
+        # Sanitiser + filtrer les scans résiduels (slugs contenant "scan")
+        slugs = [
+            _clean_slug(s) for s in raw_slugs
+            if _clean_slug(s) and 'scan' not in _clean_slug(s).lower()
+        ]
+        logger.log("ANIMESAMA", f"Anime du jour (weekday={today}): {len(slugs)} trouvés (scans filtrés)")
         return slugs
 
     def _extract_planning_by_day(self, html_content: str) -> Dict[int, List[str]]:
@@ -179,12 +196,23 @@ class AnimeSamaPlanning(BaseScraper):
 
                 # Carte planning avec lien /catalogue/
                 if 'planning-card' in ' '.join(classes):
+                    # Ignorer les scans/mangas
+                    card_text = element.get_text().lower()
+                    if 'scan' in card_text and 'saison' not in card_text:
+                        continue
+
                     link = element.find('a', href=lambda h: h and '/catalogue/' in h)
                     if not link:
                         link = element if element.name == 'a' and element.get('href', '') else None
                     if link:
                         href = link.get('href', '')
-                        slug = _clean_slug(href.split('/catalogue/')[-1])
+                        # Ignorer les URLs qui contiennent /scan/ (scans de manga)
+                        if '/scan/' in href.lower():
+                            continue
+                        raw_path = href.split('/catalogue/')[-1]
+                        if _is_scan_path(raw_path):
+                            continue
+                        slug = _clean_slug(raw_path)
                         if slug and current_day is not None:
                             if current_day not in result:
                                 result[current_day] = []
@@ -223,7 +251,11 @@ class AnimeSamaPlanning(BaseScraper):
                 while next_sib:
                     links = next_sib.find_all('a', href=lambda h: h and '/catalogue/' in h)
                     for link in links:
-                        slug = _clean_slug(link.get('href', '').split('/catalogue/')[-1])
+                        href = link.get('href', '')
+                        raw_path = href.split('/catalogue/')[-1]
+                        if _is_scan_path(raw_path):
+                            continue
+                        slug = _clean_slug(raw_path)
                         if slug:
                             result[day_idx].append(slug)
                     # Arrêter si on trouve un autre jour
@@ -300,4 +332,4 @@ async def get_smart_cache_ttl(anime_slug: str) -> int:
     except Exception as e:
         logger.warning(f"Erreur calcul TTL '{anime_slug}': {e}")
         return settings.ONGOING_ANIME_TTL
-                        
+        
