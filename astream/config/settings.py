@@ -139,9 +139,9 @@ def get_base_manifest() -> Dict[str, Any]:
         "resources": [
             "catalog",
             {"name": "meta", "types": ["anime"], "idPrefixes": ["as"]},
-            {"name": "stream", "types": ["anime"], "idPrefixes": ["as"]}
+            {"name": "stream", "types": ["movie", "series", "anime"], "idPrefixes": ["tt", "kitsu", "as"]}
         ],
-        "types": ["anime"],
+        "types": ["movie", "series", "anime"],
         "logo": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg",
         "background": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-background.png",
         "behaviorHints": {"configurable": True, "configurationRequired": False},
