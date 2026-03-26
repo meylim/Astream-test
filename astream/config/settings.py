@@ -138,10 +138,10 @@ def get_base_manifest() -> Dict[str, Any]:
         ],
         "resources": [
             "catalog",
-            {"name": "meta", "types": ["anime"], "idPrefixes": ["as"]},
-            {"name": "stream", "types": ["anime"], "idPrefixes": ["as"]}
+            {"name": "meta", "types": ["anime", "series", "movie"], "idPrefixes": ["as", "tt", "kitsu"]},
+            {"name": "stream", "types": ["anime", "series", "movie"], "idPrefixes": ["as", "tt", "kitsu"]}
         ],
-        "types": ["anime"],
+        "types": ["anime", "series", "movie"],
         "logo": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg",
         "background": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-background.png",
         "behaviorHints": {"configurable": True, "configurationRequired": False},
@@ -153,3 +153,4 @@ def get_base_manifest() -> Dict[str, Any]:
 # ===========================
 database_url = settings.DATABASE_PATH if settings.DATABASE_TYPE == "sqlite" else settings.DATABASE_URL
 database = Database(f"{'sqlite' if settings.DATABASE_TYPE == 'sqlite' else 'postgresql'}://{'/' if settings.DATABASE_TYPE == 'sqlite' else ''}{database_url}")
+    
