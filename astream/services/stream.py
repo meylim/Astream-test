@@ -119,8 +119,8 @@ class StreamService:
             player_urls_with_language = cached_players.get("player_urls", []) if cached_players else []
 
             if player_urls_with_language:
-                http_client = await self._get_http_client()
-                resolver = AnimeSamaVideoResolver(http_client)
+                video_http_client = await self._get_http_client()
+                resolver = AnimeSamaVideoResolver(video_http_client)
 
                 logger.log("STREAM", f"Extraction vidéos depuis {len(player_urls_with_language)} URLs")
                 video_urls_with_language = await resolver.extract_video_urls_from_players_with_language(
