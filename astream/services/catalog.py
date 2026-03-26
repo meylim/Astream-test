@@ -192,7 +192,68 @@ class CatalogService:
         return metas
 
 
+    async def get_en_cours_catalog(self, request, b64config: str, config) -> List[Dict[str, Any]]:
+        """
+        Catalogue des anime actuellement en cours de diffusion (depuis le planning).
+        """
+        try:
+            from astream.scrapers.animesama.planning import get_planning_checker
+            checker = await get_planning_checker()
+            slugs = await checker.get_current_planning_anime()
+
+            if not slugs:
+                logger.warning("CATALOG EN COURS - Aucun anime dans le planning")
+                return []
+
+            logger.log("API", f"CATALOG EN COURS - {len(slugs)} anime dans le planning")
+
+            homepage_anime = await self.animesama_api.get_homepage_content()
+            homepage_by_slug = {a.get("slug", ""): a for a in homepage_anime}
+
+            results = []
+            for slug in slugs:
+                if slug in homepage_by_slug:
+                    results.append(homepage_by_slug[slug])
+                else:
+                    results.append({"slug": slug, "title": slug.replace("-", " ").title(), "genres": []})
+
+            enhanced = await self._enrich_catalog_with_tmdb(results, config)
+            metas = await self._build_catalog_metas(request, b64config, enhanced, config, None, None)
+            logger.log("API", f"CATALOG EN COURS - {len(metas)} anime retournés")
+            return metas
+
+        except Exception as e:
+            logger.error(f"Erreur catalogue en cours: {e}")
+            return []
+
+    async def get_nouveautes_catalog(self, request, b64config: str, config) -> List[Dict[str, Any]]:
+        """
+        Catalogue des dernières sorties (section containerSorties de la homepage).
+        """
+        try:
+            homepage_anime = await self.animesama_api.get_homepage_content()
+
+            if not homepage_anime:
+                return []
+
+            # La homepage retourne d'abord les nouveautés (new_releases scrape en premier)
+            # On prend les 24 premiers qui correspondent à la section "Sorties"
+            nouveautes = homepage_anime[:24]
+
+            logger.log("API", f"CATALOG NOUVEAUTES - {len(nouveautes)} anime récents")
+
+            enhanced = await self._enrich_catalog_with_tmdb(nouveautes, config)
+            metas = await self._build_catalog_metas(request, b64config, enhanced, config, None, None)
+            logger.log("API", f"CATALOG NOUVEAUTES - {len(metas)} anime retournés")
+            return metas
+
+        except Exception as e:
+            logger.error(f"Erreur catalogue nouveautés: {e}")
+            return []
+
+
 # ===========================
 # Instance Singleton Globale
 # ===========================
 catalog_service = CatalogService()
+            
