@@ -134,6 +134,18 @@ def get_base_manifest() -> Dict[str, Any]:
                     {"name": "search", "isRequired": False},
                     {"name": "genre", "isRequired": False, "options": []}
                 ]
+            },
+            {
+                "type": "anime",
+                "id": "animesama_en_cours",
+                "name": "Anime-Sama — En cours",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "animesama_nouveautes",
+                "name": "Anime-Sama — Nouveautés",
+                "extra": []
             }
         ],
         "resources": [
