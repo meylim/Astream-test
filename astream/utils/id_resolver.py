@@ -201,7 +201,7 @@ def extract_episode_info_from_id(episode_id: str):
     # Format Stremio pour series: id:season:episode
     parts = episode_id.split(":")
 
-    # Cas kitsu:12345:season:episode
+    # Cas kitsu:12345:season:episode (4 parties)
     if parts[0] == "kitsu" and len(parts) == 4:
         external_id = f"kitsu:{parts[1]}"
         try:
@@ -209,19 +209,30 @@ def extract_episode_info_from_id(episode_id: str):
         except ValueError:
             return None
 
-    # Cas tt1234567:1:1
+    # Cas kitsu:12345:episode (3 parties — format réel Stremio, saison implicite = 1)
+    if parts[0] == "kitsu" and len(parts) == 3:
+        external_id = f"kitsu:{parts[1]}"
+        try:
+            return external_id, 1, int(parts[2])
+        except ValueError:
+            return None
+
+    # Cas tt1234567:season:episode
     if re.match(r'^tt\d+$', parts[0]) and len(parts) == 3:
         try:
             return parts[0], int(parts[1]), int(parts[2])
         except ValueError:
             return None
 
-    # Cas kitsu12345:1:1 (sans séparateur)
+    # Cas kitsu12345:season:episode (sans séparateur deux-points)
     if re.match(r'^kitsu\d+$', parts[0]) and len(parts) == 3:
         try:
             return parts[0], int(parts[1]), int(parts[2])
         except ValueError:
             return None
 
+    # Cas movie : ID seul sans épisode (tt1234567 ou kitsu:12345)
+    if re.match(r'^tt\d+$', episode_id) or re.match(r'^kitsu[:\-]?\d+$', episode_id):
+        return episode_id, 1, 1
+
     return None
-                  
