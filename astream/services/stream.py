@@ -10,6 +10,7 @@ from astream.scrapers.animesama.details import get_or_fetch_anime_details
 from astream.scrapers.animesama.video_resolver import AnimeSamaVideoResolver
 from astream.utils.data_loader import get_dataset_loader
 from astream.utils.cache import CacheManager
+from astream.utils.id_resolver import resolve_external_id_to_slug, is_external_id, extract_episode_info_from_id
 from astream.config.settings import settings
 from astream.utils.languages import filter_by_language, sort_by_language_priority
 from astream.utils.stremio_helpers import format_stream_for_stremio
@@ -41,14 +42,28 @@ class StreamService:
             Liste des streams formatés pour Stremio
         """
         try:
-            parsed_id = MediaIdParser.parse_episode_id(episode_id)
-            if not parsed_id or parsed_id['is_metadata_only']:
-                logger.error(f"Episode_id invalide ou métadonnées seulement: {episode_id}")
-                return []
-
-            anime_slug = parsed_id['anime_slug']
-            season_number = parsed_id['season_number']
-            episode_number = parsed_id['episode_number']
+            # --- Résolution ID externe (tt.../kitsu...) ---
+            if is_external_id(episode_id):
+                ext_info = extract_episode_info_from_id(episode_id)
+                if not ext_info:
+                    logger.warning(f"ID externe non parsable: {episode_id}")
+                    return []
+                external_id, season_number, episode_number = ext_info
+                anime_slug = await resolve_external_id_to_slug(
+                    external_id, http_client, animesama_api
+                )
+                if not anime_slug:
+                    logger.warning(f"Impossible de résoudre {external_id} vers un slug Anime-Sama")
+                    return []
+                logger.log("ID_RESOLVER", f"{external_id} → slug: {anime_slug}")
+            else:
+                parsed_id = MediaIdParser.parse_episode_id(episode_id)
+                if not parsed_id or parsed_id['is_metadata_only']:
+                    logger.error(f"Episode_id invalide ou métadonnées seulement: {episode_id}")
+                    return []
+                anime_slug = parsed_id['anime_slug']
+                season_number = parsed_id['season_number']
+                episode_number = parsed_id['episode_number']
 
             logger.log("STREAM", f"Récupération streams {anime_slug} S{season_number}E{episode_number}")
             cache_key = f"as:{anime_slug}:s{season_number}e{episode_number}"
@@ -211,3 +226,4 @@ class StreamService:
 # Instance Singleton
 # ===========================
 stream_service = StreamService()
+                
