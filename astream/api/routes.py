@@ -338,7 +338,32 @@ async def catalog_nouveautes_default(request: Request) -> Dict[str, List[Dict[st
         return {"metas": []}
 
 
+@main.get("/{b64config}/catalog/anime/animesama_sorties_du_jour.json", summary="Catalogue Sorties du jour")
+async def catalog_sorties_du_jour(
+    request: Request,
+    b64config: str = Path(..., description="Configuration encodée en base64")
+) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config_dict = validate_config(b64config)
+        config = ConfigModel(**config_dict)
+        metas = await catalog_service.get_sorties_du_jour_catalog(request, b64config, config)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalogue sorties du jour: {e}")
+        return {"metas": []}
+
+
+@main.get("/catalog/anime/animesama_sorties_du_jour.json", summary="Catalogue Sorties du jour (défaut)")
+async def catalog_sorties_du_jour_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config = ConfigModel()
+        metas = await catalog_service.get_sorties_du_jour_catalog(request, None, config)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalogue sorties du jour: {e}")
+        return {"metas": []}
+
+
 @main.get("/health", summary="État de santé", description="Retourne l'état de santé actuel du service")
 async def health() -> Dict[str, str]:
     return {"status": "ok"}
-    
