@@ -171,6 +171,61 @@ async def get_anime_stream(
         return {"streams": []}
 
 
+# ===========================
+# Catalogues spéciaux
+# ===========================
+@main.get("/{b64config}/catalog/anime/animesama_en_cours.json", summary="Catalogue En cours")
+async def catalog_en_cours(
+    request: Request,
+    b64config: str = Path(..., description="Configuration encodée en base64")
+) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config_dict = validate_config(b64config)
+        config = ConfigModel(**config_dict)
+        metas = await catalog_service.get_en_cours_catalog(request, b64config, config)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalogue en cours: {e}")
+        return {"metas": []}
+
+
+@main.get("/{b64config}/catalog/anime/animesama_nouveautes.json", summary="Catalogue Nouveautés")
+async def catalog_nouveautes(
+    request: Request,
+    b64config: str = Path(..., description="Configuration encodée en base64")
+) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config_dict = validate_config(b64config)
+        config = ConfigModel(**config_dict)
+        metas = await catalog_service.get_nouveautes_catalog(request, b64config, config)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalogue nouveautés: {e}")
+        return {"metas": []}
+
+
+# ===========================
+# Test clé TMDB
+# ===========================
+@main.get("/api/test-tmdb", summary="Test clé API TMDB")
+async def test_tmdb_key(key: str) -> Dict[str, Any]:
+    """Valide une clé API TMDB en effectuant un appel test vers l'API."""
+    if not key or len(key.strip()) < 10:
+        return {"valid": False, "error": "Clé trop courte"}
+    try:
+        test_url = "https://api.themoviedb.org/3/configuration"
+        from astream.utils.http_client import http_client as _hc
+        response = await _hc.get(test_url, params={"api_key": key.strip()})
+        if response.status_code == 200:
+            return {"valid": True, "error": None}
+        elif response.status_code == 401:
+            return {"valid": False, "error": "Clé API invalide"}
+        else:
+            return {"valid": False, "error": f"Erreur HTTP {response.status_code}"}
+    except Exception as e:
+        return {"valid": False, "error": str(e)}
+
+
 @main.get("/manifest.json", summary="Manifeste Stremio", description="Retourne les métadonnées de l'addon pour l'installation avec genres dynamiques")
 async def manifest_default(request: Request) -> Dict[str, Any]:
     base_manifest = get_base_manifest()
@@ -261,7 +316,29 @@ async def stream_default(
         return {"streams": []}
 
 
+@main.get("/catalog/anime/animesama_en_cours.json", summary="Catalogue En cours (défaut)")
+async def catalog_en_cours_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config = ConfigModel()
+        metas = await catalog_service.get_en_cours_catalog(request, None, config)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalogue en cours: {e}")
+        return {"metas": []}
+
+
+@main.get("/catalog/anime/animesama_nouveautes.json", summary="Catalogue Nouveautés (défaut)")
+async def catalog_nouveautes_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config = ConfigModel()
+        metas = await catalog_service.get_nouveautes_catalog(request, None, config)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalogue nouveautés: {e}")
+        return {"metas": []}
+
+
 @main.get("/health", summary="État de santé", description="Retourne l'état de santé actuel du service")
 async def health() -> Dict[str, str]:
     return {"status": "ok"}
-        
+    
