@@ -32,9 +32,9 @@ async def configure(request: Request) -> Any:
     config_data = dict(web_config)
     config_data["ADDON_NAME"] = settings.ADDON_NAME
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "CUSTOM_HEADER_HTML": settings.CUSTOM_HEADER_HTML or "",
             "EXCLUDED_DOMAINS": get_all_excluded_domains(),
             "webConfig": config_data,
@@ -50,9 +50,9 @@ async def configure_addon(
     config_data = dict(web_config)
     config_data["ADDON_NAME"] = settings.ADDON_NAME
     return templates.TemplateResponse(
+        request,
         "index.html",
         {
-            "request": request,
             "CUSTOM_HEADER_HTML": settings.CUSTOM_HEADER_HTML or "",
             "EXCLUDED_DOMAINS": get_all_excluded_domains(),
             "webConfig": config_data,
