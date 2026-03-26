@@ -10,6 +10,8 @@ from astream.services.tmdb.client import TMDBClient
 from astream.config.settings import settings, SEASON_TYPE_FILM
 from astream.scrapers.animesama.helpers import parse_genres_string
 from astream.utils.stremio_helpers import StremioMetaBuilder, StremioLinkBuilder
+from astream.utils.id_resolver import resolve_external_id_to_slug, is_external_id
+from astream.utils.http_client import http_client as global_http_client
 
 if TYPE_CHECKING:
     from astream.scrapers.animesama.player import AnimeSamaPlayer
@@ -44,10 +46,17 @@ class MetadataService:
         Returns:
             Dictionnaire meta Stremio complet
         """
-        if not anime_id.startswith("as:"):
-            return {}
-
-        anime_slug = anime_id.replace("as:", "")
+        # --- Résolution ID externe (tt.../kitsu...) ---
+        if is_external_id(anime_id):
+            from astream.scrapers.animesama.client import animesama_api as _api
+            resolved_slug = await resolve_external_id_to_slug(anime_id, global_http_client, _api)
+            if not resolved_slug:
+                logger.warning(f"META: Impossible de résoudre {anime_id} vers un slug Anime-Sama")
+                return {}
+            anime_slug = resolved_slug
+            logger.log("ID_RESOLVER", f"META: {anime_id} → slug: {anime_slug}")
+        else:
+            anime_slug = anime_id.replace("as:", "")
 
         anime_data = await self._get_anime_details(anime_slug)
         if not anime_data:
@@ -282,3 +291,4 @@ class MetadataService:
 # Instance Singleton Globale
 # ===========================
 metadata_service = MetadataService()
+            
