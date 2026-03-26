@@ -141,6 +141,8 @@ async def animesama_meta(
 
 
 @main.get("/{b64config}/stream/anime/{episode_id}.json", summary="Obtenir les flux", description="Retourne les flux vidéo disponibles pour l'épisode demandé avec fusion dataset + scraping et filtrage de langue")
+@main.get("/{b64config}/stream/series/{episode_id}.json", summary="Obtenir les flux (series)", description="Flux pour IDs IMDb/Kitsu - type series")
+@main.get("/{b64config}/stream/movie/{episode_id}.json", summary="Obtenir les flux (movie)", description="Flux pour IDs IMDb/Kitsu - type movie")
 async def get_anime_stream(
     request: Request,
     episode_id: str = Path(..., description="Identifiant d'épisode (format: as:slug:s1e1)"),
@@ -232,6 +234,8 @@ async def meta_default(
 
 
 @main.get("/stream/anime/{episode_id}.json", summary="Obtenir les flux", description="Retourne les flux vidéo disponibles pour l'épisode demandé avec fusion dataset + scraping et filtrage de langue")
+@main.get("/stream/series/{episode_id}.json", summary="Obtenir les flux (series)", description="Flux pour IDs IMDb/Kitsu - type series")
+@main.get("/stream/movie/{episode_id}.json", summary="Obtenir les flux (movie)", description="Flux pour IDs IMDb/Kitsu - type movie")
 async def stream_default(
     request: Request,
     episode_id: str = Path(..., description="Identifiant d'épisode (format: as:slug:s1e1)")
@@ -260,4 +264,4 @@ async def stream_default(
 @main.get("/health", summary="État de santé", description="Retourne l'état de santé actuel du service")
 async def health() -> Dict[str, str]:
     return {"status": "ok"}
-        
+    
