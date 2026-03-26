@@ -1,259 +1,161 @@
-import asyncio
-from typing import List, Dict, Any, Optional
+from typing import List, Optional, Dict, Any
+from urllib.parse import quote
+from bs4 import BeautifulSoup
 
+from astream.utils.http_client import HttpClient
 from astream.utils.logger import logger
-from astream.scrapers.animesama.client import animesama_api
-from astream.scrapers.animesama.helpers import parse_genres_string
-from astream.services.tmdb.service import tmdb_service
-from astream.services.metadata import metadata_service
-from astream.utils.cache import cache_stats
-from astream.utils.stremio_helpers import StremioMetaBuilder, StremioLinkBuilder
+from astream.scrapers.base import BaseScraper
+from astream.utils.cache import CacheManager
 from astream.config.settings import settings
-from astream.scrapers.animesama.planning import get_planning_checker
+from astream.scrapers.animesama.card_parser import CardParser
+from astream.scrapers.animesama.parser import is_valid_content_type
 
 
 # ===========================
-# Classe CatalogService
+# Classe AnimeSamaCatalog
 # ===========================
-class CatalogService:
-    """
-    Service responsable de la gestion du catalogue et de la recherche d'anime.
-    Gère la récupération des données, l'extraction des genres et l'enrichissement TMDB.
-    """
+class AnimeSamaCatalog(BaseScraper):
 
-    def __init__(self):
-        self.animesama_api = animesama_api
-        self.tmdb_service = tmdb_service
+    def __init__(self, client: HttpClient):
+        super().__init__(client, settings.ANIMESAMA_URL)
 
-    async def get_complete_catalog(self, request, b64config: str, search: Optional[str] = None,
-                                   genre: Optional[str] = None, config=None) -> List[Dict[str, Any]]:
-        """
-        Récupère le catalogue complet avec toute la logique.
-        TOUTE la logique de récupération et construction du catalogue est ici.
+    async def get_homepage_content(self) -> List[Dict[str, Any]]:
+        cache_key = "as:homepage"
+        lock_key = "lock:homepage"
 
-        Args:
-            request: Objet Request FastAPI
-            b64config: Configuration encodée base64
-            search: Terme de recherche optionnel
-            genre: Genre à filtrer optionnel
-            config: Configuration utilisateur
+        async def fetch_homepage():
+            logger.debug(f"Cache miss {cache_key} - Scraping homepage")
+            response = await self._internal_request('get', f"{self.base_url}/")
+            response.raise_for_status()
 
-        Returns:
-            Liste des objets meta formatés pour Stremio
-        """
-        logger.log("API", f"CATALOG - Catalogue Anime-Sama demandé, recherche: {search}, genre: {genre}")
+            soup = BeautifulSoup(response.text, 'html.parser')
+            all_anime = []
+            seen_slugs = set()
 
-        language_filter = config.language if config.language != "Tout" else None
+            new_releases = await self._scrape_new_releases(soup, seen_slugs)
+            all_anime.extend(new_releases)
 
-        anime_data = await self._get_catalog_data(search, genre, language_filter)
-        logger.log("API", f"Traitement de {len(anime_data)} anime.")
+            classics = await self._scrape_classics(soup, seen_slugs)
+            all_anime.extend(classics)
 
-        enhanced_anime_data = await self._enrich_catalog_with_tmdb(anime_data, config)
+            pepites = await self._scrape_pepites(soup, seen_slugs)
+            all_anime.extend(pepites)
 
-        metas = await self._build_catalog_metas(request, b64config, enhanced_anime_data, config, metadata_service, genre)
+            logger.log("ANIMESAMA", f"Homepage: {len(all_anime)} anime récupérés")
 
-        # Log résumé des stats de cache
-        cache_stats.log_summary()
-        cache_stats.reset()
+            if not all_anime:
+                logger.log("DATABASE", "Aucun anime trouvé sur homepage - pas de cache")
+                return None
 
-        if search and genre:
-            logger.log("API", f"CATALOG - Recherche '{search}' + Genre '{genre}': {len(metas)} anime trouvés")
-        elif search:
-            logger.log("API", f"CATALOG - Recherche '{search}': {len(metas)} anime trouvés")
-        elif genre:
-            logger.log("API", f"CATALOG - Genre '{genre}': {len(metas)} anime trouvés")
-        else:
-            logger.log("API", f"CATALOG - Retour de tous les {len(metas)} anime valides")
+            return {"anime": all_anime, "total": len(all_anime)}
 
-        return metas
-
-    async def _get_catalog_data(self, search: Optional[str] = None, genre: Optional[str] = None,
-                                language: Optional[str] = None) -> List[Dict[str, Any]]:
         try:
-            if search:
-                logger.log("ANIMESAMA", f"Recherche '{search}' (genre: {genre}, langue: {language})")
-                return await self.animesama_api.search_anime(search, language, genre)
-            else:
-                logger.log("ANIMESAMA", "Récupération contenu homepage complet")
-                return await self.animesama_api.get_homepage_content()
+            cached_data = await CacheManager.get_or_fetch(
+                cache_key=cache_key,
+                fetch_func=fetch_homepage,
+                lock_key=lock_key,
+                ttl=settings.DYNAMIC_LIST_TTL
+            )
+
+            return cached_data.get("anime", []) if cached_data else []
 
         except Exception as e:
-            logger.error(f"Erreur récupération catalogue: {e}")
+            logger.error(f"Échec récupération homepage: {e}")
             return []
 
-    def _extract_available_genres(self, catalog_data: List[Dict[str, Any]]) -> List[str]:
-        try:
-            genres = set()
+    async def search_anime(self, query: str, language: Optional[str] = None, genre: Optional[str] = None) -> List[Dict[str, Any]]:
+        cache_key = f"as:search:{query}"
+        lock_key = f"lock:search:{query}"
 
-            for anime in catalog_data:
-                anime_genres = anime.get('genres', '')
-                if isinstance(anime_genres, str) and anime_genres:
-                    genre_list = parse_genres_string(anime_genres)
-                    genres.update(genre_list)
-                elif isinstance(anime_genres, list):
-                    genres.update(anime_genres)
+        async def fetch_search_results():
+            logger.log("DATABASE", f"Cache miss {cache_key} - Recherche live")
+            all_results = []
 
-            cleaned_genres = [g for g in genres if len(g) > 1 and g not in ['N/A', 'n/a', '']]
-            return sorted(cleaned_genres)
+            types_to_search = ["Anime", "Film", "Autres"]
 
-        except Exception as e:
-            logger.warning(f"Erreur extraction genres: {e}")
-            return []
+            for content_type in types_to_search:
+                try:
+                    search_url = f"{self.base_url}/catalogue/?search={quote(query)}"
 
-    async def extract_unique_genres(self) -> List[str]:
-        """
-        Extrait les genres uniques depuis le catalogue Anime-Sama.
-        Utilise get_homepage_content() qui gère déjà le cache et le locking.
+                    if language and language in ["VOSTFR", "VF"]:
+                        search_url += f"&langue[]={language}"
 
-        Returns:
-            Liste triée des genres uniques
-        """
-        try:
-            anime_data = await self.animesama_api.get_homepage_content()
-            genres = self._extract_available_genres(anime_data)
-            logger.debug(f"Extraction de {len(genres)} genres uniques depuis le catalogue")
-            return genres
+                    if genre:
+                        search_url += f"&genre[]={quote(genre)}"
 
-        except Exception as e:
-            logger.error(f"Erreur extraction genres uniques: {e}")
-            return []
+                    search_url += f"&type[]={content_type}"
 
-    async def _enrich_catalog_with_tmdb(self, anime_data: list, config) -> list:
-        if not config.tmdbEnabled or not (config.tmdbApiKey or settings.TMDB_API_KEY):
-            return anime_data
+                    logger.debug(f"Recherche {content_type.lower()}: {search_url}")
+                    response = await self._internal_request('get', search_url)
+                    response.raise_for_status()
 
-        try:
-            tasks = [self.tmdb_service.enhance_anime_metadata(anime, config) for anime in anime_data]
-            enhanced_anime_data = await asyncio.gather(*tasks, return_exceptions=True)
+                    soup = BeautifulSoup(response.text, 'html.parser')
 
-            enriched_count = sum(1 for result in enhanced_anime_data if not isinstance(result, Exception) and result.get('poster'))
-            enhanced_anime_data = [
-                result if not isinstance(result, Exception) else anime_data[i]
-                for i, result in enumerate(enhanced_anime_data)
-            ]
+                    anime_cards = soup.find_all('a', href=lambda x: x and '/catalogue/' in x)
 
-            if enriched_count > 0:
-                logger.log("TMDB", f"Enrichissement catalogue: {enriched_count}/{len(anime_data)} anime enrichis")
+                    for card in anime_cards:
+                        anime_data = CardParser.parse_anime_card(card)
+                        if anime_data:
+                            all_results.append(anime_data)
 
-            return enhanced_anime_data
-        except Exception as e:
-            logger.error(f"Erreur enrichissement TMDB catalogue: {e}")
-            return anime_data
-
-    async def _build_catalog_metas(self, request, b64config: str, anime_data: list, config, metadata_service, genre_filter: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        Construit la liste des objets meta Stremio pour le catalogue.
-        TOUTE la logique de traitement est ici.
-
-        Args:
-            request: Request FastAPI pour construction URLs
-            b64config: Config base64
-            anime_data: Liste des animes
-            config: Configuration utilisateur
-            metadata_service: Service metadata pour liens
-            genre_filter: Filtre de genre optionnel
-
-        Returns:
-            Liste des objets meta formatés pour Stremio
-        """
-        metas = []
-
-        for anime in anime_data:
-            try:
-                anime_slug = anime.get('slug', '')
-                anime_title = anime.get('title', '').strip()
-
-                if not anime_title:
-                    anime_title = anime_slug.replace('-', ' ').title() if anime_slug else 'Titre indisponible'
-                    logger.warning(f"CATALOG - Pas de titre pour {anime_slug}, utilisation de '{anime_title}'")
-
-                genres_raw = anime.get('genres', '')
-                genres = parse_genres_string(genres_raw) if isinstance(genres_raw, str) else genres_raw
-
-                if genre_filter and genre_filter not in genres:
+                except Exception as e:
+                    logger.warning(f"Erreur recherche {content_type}: {e}")
                     continue
 
-                meta = StremioMetaBuilder.build_catalog_meta(anime, config)
+            logger.log("ANIMESAMA", f"Trouvé {len(all_results)} résultats pour '{query}'")
 
-                genre_links = StremioLinkBuilder.build_genre_links(request, b64config, genres)
-                imdb_links = StremioLinkBuilder.build_imdb_link(anime)
-                meta["links"] = genre_links + imdb_links
+            if not all_results:
+                logger.log("DATABASE", f"Pas de cache pour {cache_key} - 0 résultats")
+                return None
 
-                meta["genres"] = genres
+            cache_data = {"results": all_results, "query": query, "total_found": len(all_results)}
+            logger.log("DATABASE", f"Cache set {cache_key} - {len(all_results)} résultats")
+            return cache_data
 
-                metas.append(meta)
-
-            except Exception as e:
-                logger.error(f"Erreur construction meta pour {anime.get('slug', 'unknown')}: {e}")
-                continue
-
-        logo_count = sum(1 for anime in anime_data if anime.get('logo'))
-        logger.log("API", f"CATALOG - Traitement terminé: {len(metas)} anime, {logo_count} avec logo TMDB")
-
-        return metas
-
-
-    async def get_en_cours_catalog(self, request, b64config: str, config) -> List[Dict[str, Any]]:
-        """
-        Catalogue des anime actuellement en cours de diffusion (depuis le planning).
-        """
         try:
-            checker = await get_planning_checker()
-            slugs = await checker.get_current_planning_anime()
+            cached_data = await CacheManager.get_or_fetch(
+                cache_key=cache_key,
+                fetch_func=fetch_search_results,
+                lock_key=lock_key,
+                ttl=settings.DYNAMIC_LIST_TTL
+            )
 
-            if not slugs:
-                logger.warning("CATALOG EN COURS - Aucun anime dans le planning")
-                return []
-
-            logger.log("API", f"CATALOG EN COURS - {len(slugs)} anime dans le planning")
-
-            homepage_anime = await self.animesama_api.get_homepage_content()
-            homepage_by_slug = {a.get("slug", ""): a for a in homepage_anime}
-
-            results = []
-            for slug in slugs:
-                if slug in homepage_by_slug:
-                    results.append(homepage_by_slug[slug])
-                else:
-                    results.append({"slug": slug, "title": slug.replace("-", " ").title(), "genres": []})
-
-            enhanced = await self._enrich_catalog_with_tmdb(results, config)
-            metas = await self._build_catalog_metas(request, b64config, enhanced, config, None, None)
-            logger.log("API", f"CATALOG EN COURS - {len(metas)} anime retournés")
-            return metas
+            return cached_data.get("results", []) if cached_data else []
 
         except Exception as e:
-            logger.error(f"Erreur catalogue en cours: {e}")
+            logger.error(f"Échec recherche anime: {e}")
             return []
 
-    async def get_nouveautes_catalog(self, request, b64config: str, config) -> List[Dict[str, Any]]:
-        """
-        Catalogue des dernières sorties (section containerSorties de la homepage).
-        """
+    async def _scrape_container(self, soup: BeautifulSoup, container_id: str, parser_method, seen_slugs: set, section_name: str) -> List[Dict[str, Any]]:
         try:
-            homepage_anime = await self.animesama_api.get_homepage_content()
-
-            if not homepage_anime:
+            anime = []
+            container = soup.find('div', id=container_id)
+            if not container:
                 return []
 
-            # La homepage retourne d'abord les nouveautés (new_releases scrape en premier)
-            # On prend les 24 premiers qui correspondent à la section "Sorties"
-            nouveautes = homepage_anime[:24]
+            anime_cards = container.find_all('div', class_='shrink-0')
 
-            logger.log("API", f"CATALOG NOUVEAUTES - {len(nouveautes)} anime récents")
+            for card in anime_cards:
+                link = card.find('a', href=lambda x: x and '/catalogue/' in x)
+                if not link:
+                    continue
 
-            enhanced = await self._enrich_catalog_with_tmdb(nouveautes, config)
-            metas = await self._build_catalog_metas(request, b64config, enhanced, config, None, None)
-            logger.log("API", f"CATALOG NOUVEAUTES - {len(metas)} anime retournés")
-            return metas
+                anime_data = parser_method(link)
+                if anime_data and is_valid_content_type(anime_data.get('type', '')) and anime_data['slug'] not in seen_slugs:
+                    seen_slugs.add(anime_data['slug'])
+                    anime.append(anime_data)
+
+            return anime
 
         except Exception as e:
-            logger.error(f"Erreur catalogue nouveautés: {e}")
+            logger.warning(f"Erreur scraping {section_name}: {e}")
             return []
 
+    async def _scrape_new_releases(self, soup: BeautifulSoup, seen_slugs: set) -> List[Dict[str, Any]]:
+        return await self._scrape_container(soup, 'containerSorties', CardParser.parse_anime_card, seen_slugs, 'nouveaux contenus')
 
-# ===========================
-# Instance Singleton Globale
-# ===========================
-catalog_service = CatalogService()
-    
+    async def _scrape_classics(self, soup: BeautifulSoup, seen_slugs: set) -> List[Dict[str, Any]]:
+        return await self._scrape_container(soup, 'containerClassiques', CardParser.parse_anime_card, seen_slugs, 'classiques')
+
+    async def _scrape_pepites(self, soup: BeautifulSoup, seen_slugs: set) -> List[Dict[str, Any]]:
+        return await self._scrape_container(soup, 'containerPepites', CardParser.parse_pepites_card, seen_slugs, 'pépites')
