@@ -146,6 +146,12 @@ def get_base_manifest() -> Dict[str, Any]:
                 "id": "animesama_nouveautes",
                 "name": "Anime-Sama — Nouveautés",
                 "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "animesama_sorties_du_jour",
+                "name": "Anime-Sama — Sorties du jour",
+                "extra": []
             }
         ],
         "resources": [
@@ -165,3 +171,4 @@ def get_base_manifest() -> Dict[str, Any]:
 # ===========================
 database_url = settings.DATABASE_PATH if settings.DATABASE_TYPE == "sqlite" else settings.DATABASE_URL
 database = Database(f"{'sqlite' if settings.DATABASE_TYPE == 'sqlite' else 'postgresql'}://{'/' if settings.DATABASE_TYPE == 'sqlite' else ''}{database_url}")
+    
