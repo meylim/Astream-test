@@ -10,6 +10,8 @@ from astream.config.settings import settings
 from astream.scrapers.animesama.card_parser import CardParser
 from astream.scrapers.animesama.parser import is_valid_content_type
 
+import asyncio
+
 
 # ===========================
 # Classe AnimeSamaCatalog
@@ -71,9 +73,13 @@ class AnimeSamaCatalog(BaseScraper):
             logger.log("DATABASE", f"Cache miss {cache_key} - Recherche live")
             all_results = []
 
+            # ============================================================
+            # MODIFIÉ : Recherche des 3 types EN PARALLÈLE au lieu de
+            # séquentiel. Gain estimé 200-400ms par recherche.
+            # ============================================================
             types_to_search = ["Anime", "Film", "Autres"]
 
-            for content_type in types_to_search:
+            async def search_one_type(content_type):
                 try:
                     search_url = f"{self.base_url}/catalogue/?search={quote(query)}"
 
@@ -93,20 +99,39 @@ class AnimeSamaCatalog(BaseScraper):
 
                     anime_cards = soup.find_all('a', href=lambda x: x and '/catalogue/' in x)
 
+                    results = []
                     for card in anime_cards:
                         anime_data = CardParser.parse_anime_card(card)
                         if anime_data:
-                            all_results.append(anime_data)
+                            results.append(anime_data)
+                    return results
 
                 except Exception as e:
                     logger.warning(f"Erreur recherche {content_type}: {e}")
+                    return []
+
+            type_results = await asyncio.gather(
+                *[search_one_type(ct) for ct in types_to_search],
+                return_exceptions=True
+            )
+
+            for result in type_results:
+                if isinstance(result, Exception):
+                    logger.warning(f"Erreur recherche type: {result}")
                     continue
+                all_results.extend(result)
 
             logger.log("ANIMESAMA", f"Trouvé {len(all_results)} résultats pour '{query}'")
 
+            # ============================================================
+            # MODIFIÉ : Cacher aussi les résultats vides avec TTL court.
+            # Avant, les recherches sans résultat n'étaient PAS cachées,
+            # ce qui causait des recherches répétées identiques (kitsu:50444
+            # relançait 18 requêtes × 3 tentatives = 54 requêtes gaspillées).
+            # ============================================================
             if not all_results:
-                logger.log("DATABASE", f"Pas de cache pour {cache_key} - 0 résultats")
-                return None
+                logger.log("DATABASE", f"Cache set {cache_key} - 0 résultats (cache négatif TTL 300s)")
+                return {"results": [], "query": query, "total_found": 0, "empty": True}
 
             cache_data = {"results": all_results, "query": query, "total_found": len(all_results)}
             logger.log("DATABASE", f"Cache set {cache_key} - {len(all_results)} résultats")
@@ -159,3 +184,4 @@ class AnimeSamaCatalog(BaseScraper):
 
     async def _scrape_pepites(self, soup: BeautifulSoup, seen_slugs: set) -> List[Dict[str, Any]]:
         return await self._scrape_container(soup, 'containerPepites', CardParser.parse_pepites_card, seen_slugs, 'pépites')
+            
