@@ -1,5 +1,6 @@
 from curl_cffi.requests import AsyncSession
 import asyncio
+import time
 import random
 import json
 import re
@@ -198,11 +199,14 @@ class HttpClient(BaseClient):
                 if attempt > 0:
                     logger.debug(f"Retry {attempt}/{self.retries}: {method} {url}")
 
+                t0 = time.monotonic()
                 response = await self.client.request(method, url, **kwargs)
+                elapsed = round((time.monotonic() - t0) * 1000)
 
                 wrapped_response = CurlResponse(response)
                 wrapped_response.raise_for_status()
 
+                logger.log("PERFORMANCE", f"HTTP {method} {url[:100]} → {response.status_code} {elapsed}ms")
                 return wrapped_response
 
             except asyncio.TimeoutError:
@@ -239,3 +243,4 @@ class HttpClient(BaseClient):
 # Instance Singleton Globale
 # ===========================
 http_client = HttpClient()
+            
