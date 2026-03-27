@@ -9,7 +9,26 @@ from astream.services.metadata import metadata_service
 from astream.utils.cache import cache_stats
 from astream.utils.stremio_helpers import StremioMetaBuilder, StremioLinkBuilder
 from astream.config.settings import settings
-from astream.utils.timing import FlowTimer, timed_step
+
+
+# ===========================
+# Filtrage des scans/mangas
+# ===========================
+SCAN_KEYWORDS = {"scan", "manga", "light-novel", "novel", "webtoon"}
+
+
+def is_scan_slug(slug: str) -> bool:
+    """Retourne True si le slug correspond à un scan/manga/webtoon."""
+    if not slug:
+        return False
+    slug_lower = slug.lower()
+    return any(kw in slug_lower for kw in SCAN_KEYWORDS)
+
+
+# ===========================
+# Sémaphore TMDB : limite la concurrence pour ne pas saturer 0.1 vCPU
+# ===========================
+_tmdb_semaphore = asyncio.Semaphore(5)
 
 
 # ===========================
@@ -43,20 +62,14 @@ class CatalogService:
         """
         logger.log("API", f"CATALOG - Catalogue Anime-Sama demandé, recherche: {search}, genre: {genre}")
 
-        timer = FlowTimer("CATALOG", search or "homepage")
         language_filter = config.language if config.language != "Tout" else None
 
-        async with timed_step(timer, "fetch_data"):
-            anime_data = await self._get_catalog_data(search, genre, language_filter)
+        anime_data = await self._get_catalog_data(search, genre, language_filter)
         logger.log("API", f"Traitement de {len(anime_data)} anime.")
 
-        async with timed_step(timer, "tmdb_enrich"):
-            enhanced_anime_data = await self._enrich_catalog_with_tmdb(anime_data, config)
+        enhanced_anime_data = await self._enrich_catalog_with_tmdb(anime_data, config)
 
-        async with timed_step(timer, "build_metas"):
-            metas = await self._build_catalog_metas(request, b64config, enhanced_anime_data, config, metadata_service, genre)
-
-        timer.finish()
+        metas = await self._build_catalog_metas(request, b64config, enhanced_anime_data, config, metadata_service, genre)
 
         # Log résumé des stats de cache
         cache_stats.log_summary()
@@ -129,7 +142,16 @@ class CatalogService:
             return anime_data
 
         try:
-            tasks = [self.tmdb_service.enhance_anime_metadata(anime, config) for anime in anime_data]
+            # ============================================================
+            # MODIFIÉ : Sémaphore pour limiter à 5 enrichissements TMDB
+            # simultanés. Sur 0.1 vCPU, lancer 66 requêtes en parallèle
+            # saturait le CPU et causait des timeouts.
+            # ============================================================
+            async def enrich_with_semaphore(anime):
+                async with _tmdb_semaphore:
+                    return await self.tmdb_service.enhance_anime_metadata(anime, config)
+
+            tasks = [enrich_with_semaphore(anime) for anime in anime_data]
             enhanced_anime_data = await asyncio.gather(*tasks, return_exceptions=True)
 
             enriched_count = sum(1 for result in enhanced_anime_data if not isinstance(result, Exception) and result.get('poster'))
@@ -219,12 +241,14 @@ class CatalogService:
             homepage_anime = await self.animesama_api.get_homepage_content()
             homepage_by_slug = {a.get("slug", ""): a for a in homepage_anime}
 
-            # Exclure scans/mangas et trier: sorties du jour en premier
-            clean_slugs = {s for s in slugs if not is_scan_slug(s)}
-            sorted_slugs = sorted(clean_slugs, key=lambda s: (0 if s in today_slugs else 1))
+            # Trier: sorties du jour en premier
+            sorted_slugs = sorted(slugs, key=lambda s: (0 if s in today_slugs else 1))
 
             results = []
             for slug in sorted_slugs:
+                # AJOUT : Filtrer les scans/mangas
+                if is_scan_slug(slug):
+                    continue
                 if slug in homepage_by_slug:
                     anime = dict(homepage_by_slug[slug])
                 else:
@@ -254,8 +278,7 @@ class CatalogService:
                 logger.warning("CATALOG SORTIES DU JOUR - Aucun anime aujourd'hui")
                 return []
 
-            today_slugs = [s for s in today_slugs if not is_scan_slug(s)]
-            logger.log("API", f"CATALOG SORTIES DU JOUR - {len(today_slugs)} anime aujourd'hui (scans exclus)")
+            logger.log("API", f"CATALOG SORTIES DU JOUR - {len(today_slugs)} anime aujourd'hui")
 
             # Récupérer les données homepage pour avoir les images/infos
             homepage_anime = await self.animesama_api.get_homepage_content()
@@ -263,6 +286,9 @@ class CatalogService:
 
             results = []
             for slug in today_slugs:
+                # AJOUT : Filtrer les scans/mangas
+                if is_scan_slug(slug):
+                    continue
                 if slug in homepage_by_slug:
                     anime = dict(homepage_by_slug[slug])
                 else:
