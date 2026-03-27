@@ -1,3 +1,14 @@
+"""
+main.py — Version modifiée avec pré-chauffage et scheduler journalier.
+
+Changements par rapport à l'original :
+  1. lifespan() appelle warmup_startup_caches() APRÈS l'init DB/dataset
+  2. Lance 3 tâches background :
+     - cleanup_expired_locks (existant)
+     - daily_scheduler_task (NOUVEAU — rafraîchit à minuit Paris)
+     - periodic_refresh_task (NOUVEAU — anticipe les expirations TTL)
+"""
+
 import asyncio
 import os
 import signal
@@ -69,21 +80,41 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         else:
             logger.log("ASTREAM", "Dataset désactivé")
 
+        # ============================================================
+        # NOUVEAU : Pré-chauffage des caches stables AVANT d'accepter
+        # les connexions. Le serveur ne sera "healthy" qu'après.
+        # ============================================================
+        from astream.utils.scheduler import warmup_startup_caches
+        await warmup_startup_caches()
+
         logger.log("ASTREAM", "Initialisation terminée - Prêt à scraper Anime-Sama")
 
     except Exception as e:
         logger.error(f"Échec de l'initialisation : {e}")
         raise RuntimeError(f"L'initialisation a échoué : {e}")
 
+    # Tâches background
     cleanup_task = asyncio.create_task(cleanup_expired_locks())
+
+    # ============================================================
+    # NOUVEAU : Scheduler journalier (minuit Paris) + refresh périodique
+    # ============================================================
+    from astream.utils.scheduler import daily_scheduler_task, periodic_refresh_task
+    daily_task = asyncio.create_task(daily_scheduler_task())
+    periodic_task = asyncio.create_task(periodic_refresh_task())
 
     try:
         yield
     finally:
-        cleanup_task.cancel()
+        # Annuler toutes les tâches background proprement
+        for task in [cleanup_task, daily_task, periodic_task]:
+            task.cancel()
 
         try:
-            await asyncio.gather(cleanup_task, return_exceptions=True)
+            await asyncio.gather(
+                cleanup_task, daily_task, periodic_task,
+                return_exceptions=True
+            )
         except asyncio.CancelledError:
             pass
 
