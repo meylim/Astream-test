@@ -85,17 +85,11 @@ class AnimeSamaCatalog(BaseScraper):
             all_anime.extend(pepites)
 
             # ============================================================
-            # NOUVEAU : Extraire les données de planning + dernières sorties
-            # directement depuis la homepage (élimine le scrape /planning/).
-            #
-            # La homepage contient :
-            #   - containerSorties → anime mis à jour récemment
-            #   - containerLundi..containerDimanche → planning par jour
-            #
-            # "Sorties du jour" = intersection(planning du jour, dernières sorties)
+            # Extraire planning + dernières sorties de la homepage.
+            # containerSorties = anime récemment mis à jour sur le site
+            # containerLundi..Dimanche = planning de diffusion par jour
             # ============================================================
             dernieres_sorties_slugs = _extract_slugs_from_container(soup, "containerSorties")
-            logger.log("ANIMESAMA", f"Homepage: {len(dernieres_sorties_slugs)} slugs dans dernières sorties")
 
             planning_by_day = {}
             for day_index, container_id in DAY_CONTAINERS.items():
@@ -104,9 +98,7 @@ class AnimeSamaCatalog(BaseScraper):
                     planning_by_day[str(day_index)] = day_slugs
 
             total_planning = sum(len(v) for v in planning_by_day.values())
-            logger.log("ANIMESAMA", f"Homepage: planning {total_planning} anime sur {len(planning_by_day)} jours")
-
-            logger.log("ANIMESAMA", f"Homepage: {len(all_anime)} anime récupérés")
+            logger.log("ANIMESAMA", f"Homepage: {len(all_anime)} anime, {len(dernieres_sorties_slugs)} dernières sorties, planning {total_planning} sur {len(planning_by_day)} jours")
 
             if not all_anime:
                 logger.log("DATABASE", "Aucun anime trouvé sur homepage - pas de cache")
@@ -134,33 +126,26 @@ class AnimeSamaCatalog(BaseScraper):
             return []
 
     async def get_homepage_raw(self) -> Optional[Dict[str, Any]]:
-        """
-        Retourne les données brutes de la homepage (incluant planning et dernières sorties).
-        Utilisé par le catalog service pour les sorties du jour et en_cours.
-        """
+        """Retourne les données brutes de la homepage (incluant planning + dernières sorties)."""
         cache_key = "as:homepage"
         cached_data = await CacheManager.get(cache_key)
         return cached_data
 
     async def get_today_releases(self) -> List[str]:
         """
-        Retourne les VRAIS sorties du jour = intersection de :
-          - Le planning du jour courant (containerVendredi, etc.)
-          - Les dernières sorties (containerSorties)
-
+        VRAIS sorties du jour = intersection(planning du jour, dernières sorties).
         Garantit qu'on ne montre que les anime RÉELLEMENT mis à jour aujourd'hui.
         """
         raw = await self.get_homepage_raw()
         if not raw:
             return []
 
-        today_weekday = datetime.now().weekday()  # 0=lundi
+        today_weekday = datetime.now().weekday()
         planning_by_day = raw.get("planning_by_day", {})
         dernieres_sorties = set(raw.get("dernieres_sorties_slugs", []))
 
         today_planned = planning_by_day.get(str(today_weekday), [])
 
-        # Intersection = anime prévus aujourd'hui ET dans les dernières sorties
         real_releases = [
             slug for slug in today_planned
             if slug in dernieres_sorties and not _is_scan_slug(slug)
@@ -176,10 +161,7 @@ class AnimeSamaCatalog(BaseScraper):
         return real_releases
 
     async def get_planning_slugs(self) -> Set[str]:
-        """
-        Retourne tous les slugs du planning (tous jours confondus).
-        Utilisé pour le catalogue "en cours".
-        """
+        """Tous les slugs du planning (tous jours). Utilisé pour 'en cours'."""
         raw = await self.get_homepage_raw()
         if not raw:
             return set()
@@ -189,7 +171,6 @@ class AnimeSamaCatalog(BaseScraper):
         for day_slugs in planning_by_day.values():
             all_slugs.update(day_slugs)
 
-        # Filtrer les scans
         return {s for s in all_slugs if not _is_scan_slug(s)}
 
     async def search_anime(self, query: str, language: Optional[str] = None, genre: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -200,7 +181,6 @@ class AnimeSamaCatalog(BaseScraper):
             logger.log("DATABASE", f"Cache miss {cache_key} - Recherche live")
             all_results = []
 
-            # Recherche des 3 types EN PARALLÈLE
             types_to_search = ["Anime", "Film", "Autres"]
 
             async def search_one_type(content_type):
@@ -241,7 +221,6 @@ class AnimeSamaCatalog(BaseScraper):
 
             logger.log("ANIMESAMA", f"Trouvé {len(all_results)} résultats pour '{query}'")
 
-            # Cache résultats vides avec TTL court
             if not all_results:
                 logger.log("DATABASE", f"Cache set {cache_key} - 0 résultats (cache négatif)")
                 return {"results": [], "query": query, "total_found": 0, "empty": True}
@@ -297,3 +276,4 @@ class AnimeSamaCatalog(BaseScraper):
 
     async def _scrape_pepites(self, soup: BeautifulSoup, seen_slugs: set) -> List[Dict[str, Any]]:
         return await self._scrape_container(soup, 'containerPepites', CardParser.parse_pepites_card, seen_slugs, 'pépites')
+        
