@@ -1,28 +1,12 @@
 """
 Scheduler de pré-chauffage et rafraîchissement automatique des caches.
 
-Stratégie :
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  AU DÉMARRAGE (lifespan)                                       │
-  │  → homepage (stable ~1h)                                       │
-  │  → planning global (stable ~1h)                                │
-  │  → nouveautés (= 24 premiers de homepage, pas de coût extra)   │
-  │  → en_cours (dépend du planning global, pas du jour)           │
-  │  ⛔ PAS sorties_du_jour (dépend du jour courant → scheduler)   │
-  └─────────────────────────────────────────────────────────────────┘
-  ┌─────────────────────────────────────────────────────────────────┐
-  │  À MINUIT PARIS (scheduler quotidien)                          │
-  │  → Invalide + recharge planning_by_day                         │
-  │  → Invalide + recharge sorties_du_jour                         │
-  │  → Invalide + recharge en_cours (les "aujourd'hui" changent)   │
-  │                                                                 │
-  │  TOUTES LES HEURES                                             │
-  │  → Rafraîchit homepage si TTL expiré                           │
-  │  → Rafraîchit planning global si TTL expiré                    │
-  └─────────────────────────────────────────────────────────────────┘
+v2: Ajout du pré-chauffage TMDB au démarrage + à minuit.
 
-Le TMDB n'est PAS pré-chargé ici car il nécessite une config utilisateur
-(clé API). Il est chargé lazy au premier appel et profite du cache SQLite.
+Stratégie :
+  AU DÉMARRAGE → homepage + planning + TMDB enrichissement
+  À MINUIT PARIS → invalide + recharge planning_by_day + homepage + TMDB
+  TOUTES LES HEURES → anticipe expiration TTL homepage + planning
 """
 
 import asyncio
@@ -30,10 +14,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from astream.utils.logger import logger
+from astream.config.settings import settings
 
-# Timezone Paris (UTC+1 / UTC+2 en été)
-# On utilise un offset fixe simplifié — pour être précis il faudrait pytz/zoneinfo
-# mais sur Alpine/Docker c'est souvent absent. On calcule manuellement.
+# Timezone Paris
 PARIS_UTC_OFFSET_WINTER = 1  # CET
 PARIS_UTC_OFFSET_SUMMER = 2  # CEST
 
@@ -41,16 +24,13 @@ PARIS_UTC_OFFSET_SUMMER = 2  # CEST
 def _get_paris_now() -> datetime:
     """Retourne l'heure actuelle à Paris (gestion simplifiée DST)."""
     utc_now = datetime.now(timezone.utc)
-    # Règle DST Europe : dernier dimanche de mars → dernier dimanche d'octobre
     year = utc_now.year
-    # Dernier dimanche de mars
     march_last = datetime(year, 3, 31, tzinfo=timezone.utc)
     dst_start = march_last - timedelta(days=(march_last.weekday() + 1) % 7)
-    dst_start = dst_start.replace(hour=1)  # 01:00 UTC
-    # Dernier dimanche d'octobre
+    dst_start = dst_start.replace(hour=1)
     oct_last = datetime(year, 10, 31, tzinfo=timezone.utc)
     dst_end = oct_last - timedelta(days=(oct_last.weekday() + 1) % 7)
-    dst_end = dst_end.replace(hour=1)  # 01:00 UTC
+    dst_end = dst_end.replace(hour=1)
 
     if dst_start <= utc_now < dst_end:
         offset = PARIS_UTC_OFFSET_SUMMER
@@ -63,12 +43,48 @@ def _get_paris_now() -> datetime:
 def _seconds_until_midnight_paris() -> float:
     """Calcule le nombre de secondes jusqu'à minuit Paris."""
     paris_now = _get_paris_now()
-    # Prochain minuit
     tomorrow = (paris_now + timedelta(days=1)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     delta = tomorrow - paris_now
-    return max(delta.total_seconds(), 60)  # Minimum 60s de sécurité
+    return max(delta.total_seconds(), 60)
+
+
+# ===========================
+# Pré-chauffage TMDB
+# ===========================
+async def _warmup_tmdb(anime_list: list) -> None:
+    """
+    Pré-charge le cache TMDB pour tous les anime de la homepage.
+    Utilise la clé API serveur (settings.TMDB_API_KEY).
+    """
+    if not settings.TMDB_API_KEY:
+        logger.log("ASTREAM", "  ⏭ TMDB : pas de TMDB_API_KEY serveur, skip pré-chauffage")
+        return
+
+    if not anime_list:
+        return
+
+    try:
+        from astream.utils.validators import ConfigModel
+        from astream.services.catalog import catalog_service
+
+        # Config minimale avec la clé serveur
+        warmup_config = ConfigModel(
+            tmdbApiKey=settings.TMDB_API_KEY,
+            tmdbEnabled=True,
+        )
+
+        logger.log("ASTREAM", f"  ⏳ TMDB : enrichissement de {len(anime_list)} anime...")
+
+        # Le sémaphore dans catalog_service limite à 5 parallèles
+        enhanced = await catalog_service._enrich_catalog_with_tmdb(anime_list, warmup_config)
+
+        enriched = sum(1 for a in enhanced if a.get("poster"))
+        logger.log("ASTREAM", f"  ✓ TMDB : {enriched}/{len(anime_list)} anime enrichis en cache")
+
+    except Exception as e:
+        logger.error(f"  ✗ TMDB pré-chauffage : {e}")
 
 
 # ===========================
@@ -78,115 +94,86 @@ async def warmup_startup_caches() -> None:
     """
     Pré-charge les caches stables au démarrage.
     Appelé dans lifespan() AVANT que le serveur accepte des connexions.
-    
-    Charge :
-      - Homepage (as:homepage) → base pour nouveautés + catalog principal
-      - Planning global (as:planning) → base pour en_cours
-      - Planning par jour (as:planning:by_day) → prêt pour sorties_du_jour
-    
-    Ne charge PAS :
-      - Sorties du jour → sera chargé au premier appel ou par le scheduler
-      - TMDB → nécessite config utilisateur, lazy loading
     """
     from astream.scrapers.animesama.client import animesama_api
     from astream.scrapers.animesama.planning import get_planning_checker
 
     logger.log("ASTREAM", "Pré-chauffage des caches stables...")
 
-    try:
-        # 1. Homepage — remplit as:homepage
-        #    Aussi utilisé par : nouveautés (24 premiers), catalog principal, en_cours
-        homepage = await animesama_api.get_homepage_content()
-        count = len(homepage) if homepage else 0
-        logger.log("ASTREAM", f"  ✓ Homepage : {count} anime en cache")
+    homepage_anime = []
 
+    try:
+        homepage_anime = await animesama_api.get_homepage_content()
+        count = len(homepage_anime) if homepage_anime else 0
+        logger.log("ASTREAM", f"  ✓ Homepage : {count} anime en cache")
     except Exception as e:
         logger.error(f"  ✗ Homepage : {e}")
 
     try:
-        # 2. Planning global — remplit as:planning
-        #    Utilisé par : en_cours, is_anime_ongoing, smart_cache_ttl
         checker = await get_planning_checker()
         planning = await checker.get_current_planning_anime()
         logger.log("ASTREAM", f"  ✓ Planning : {len(planning)} anime en cours")
-
     except Exception as e:
         logger.error(f"  ✗ Planning : {e}")
 
     try:
-        # 3. Planning par jour — remplit as:planning:by_day
-        #    Utilisé par : sorties_du_jour, en_cours (tri "aujourd'hui" en tête)
         checker = await get_planning_checker()
         by_day = await checker.get_planning_by_day()
         total = sum(len(v) for v in by_day.values())
         logger.log("ASTREAM", f"  ✓ Planning/jour : {total} anime sur {len(by_day)} jours")
-
     except Exception as e:
         logger.error(f"  ✗ Planning/jour : {e}")
+
+    # TMDB — élimine les 20s de cold start pour le 1er utilisateur
+    await _warmup_tmdb(homepage_anime)
 
     logger.log("ASTREAM", "Pré-chauffage terminé — caches stables prêts")
 
 
 # ===========================
-# Rafraîchissement des données journalières
+# Rafraîchissement journalier
 # ===========================
 async def refresh_daily_caches() -> None:
-    """
-    Invalide et recharge les caches qui dépendent du jour courant.
-    Appelé à minuit Paris par le scheduler.
-    
-    Invalide + recharge :
-      - Planning par jour (as:planning:by_day) → les jours ont tourné
-      - Le cache "sorties du jour" sera naturellement rechargé au prochain appel
-        car il dépend de get_today_anime() qui lit planning_by_day
-    """
+    """Invalide et recharge les caches journaliers. Appelé à minuit Paris."""
     from astream.scrapers.animesama.planning import get_planning_checker
+    from astream.scrapers.animesama.client import animesama_api
     from astream.utils.cache import CacheManager
 
     paris_now = _get_paris_now()
     logger.log("ASTREAM", f"Rafraîchissement journalier ({paris_now.strftime('%A %d/%m %H:%M')} Paris)")
 
     try:
-        # 1. Invalider le planning par jour pour forcer un re-scrape
-        #    Le planning global (as:planning) reste valide — les anime en cours
-        #    ne changent pas à minuit, seul le jour de diffusion change
         await CacheManager.invalidate("as:planning:by_day")
-        logger.log("ASTREAM", "  ✓ Cache planning/jour invalidé")
-
-        # 2. Recharger immédiatement le planning par jour
         checker = await get_planning_checker()
         by_day = await checker.get_planning_by_day()
         total = sum(len(v) for v in by_day.values())
         logger.log("ASTREAM", f"  ✓ Planning/jour rechargé : {total} anime")
 
-        # 3. Récupérer les anime du nouveau jour
         today_anime = await checker.get_today_anime()
         logger.log("ASTREAM", f"  ✓ Sorties du jour : {len(today_anime)} anime prêts")
-
     except Exception as e:
-        logger.error(f"  ✗ Erreur rafraîchissement journalier : {e}")
+        logger.error(f"  ✗ Erreur planning : {e}")
 
-    # 4. Rafraîchir aussi la homepage (les "sorties" peuvent changer)
+    homepage_anime = []
     try:
-        from astream.scrapers.animesama.client import animesama_api
         await CacheManager.invalidate("as:homepage")
-        homepage = await animesama_api.get_homepage_content()
-        count = len(homepage) if homepage else 0
+        homepage_anime = await animesama_api.get_homepage_content()
+        count = len(homepage_anime) if homepage_anime else 0
         logger.log("ASTREAM", f"  ✓ Homepage rechargée : {count} anime")
     except Exception as e:
         logger.error(f"  ✗ Homepage : {e}")
+
+    # Ré-enrichir TMDB pour les éventuels nouveaux anime
+    await _warmup_tmdb(homepage_anime)
 
     logger.log("ASTREAM", "Rafraîchissement journalier terminé")
 
 
 # ===========================
-# Tâche scheduler principale
+# Scheduler principal
 # ===========================
 async def daily_scheduler_task() -> None:
-    """
-    Boucle infinie qui attend minuit Paris puis rafraîchit les caches journaliers.
-    Conçu pour être lancé comme asyncio.create_task() dans lifespan().
-    """
+    """Boucle infinie : attend minuit Paris puis rafraîchit."""
     while True:
         try:
             wait_seconds = _seconds_until_midnight_paris()
@@ -200,8 +187,6 @@ async def daily_scheduler_task() -> None:
             )
 
             await asyncio.sleep(wait_seconds)
-
-            # Exécuter le rafraîchissement
             await refresh_daily_caches()
 
         except asyncio.CancelledError:
@@ -209,35 +194,25 @@ async def daily_scheduler_task() -> None:
             break
         except Exception as e:
             logger.error(f"Erreur scheduler journalier : {e}")
-            # En cas d'erreur, attendre 5 min avant de réessayer
             await asyncio.sleep(300)
 
 
 # ===========================
-# Rafraîchissement périodique (toutes les heures)
+# Refresh périodique
 # ===========================
 async def periodic_refresh_task() -> None:
-    """
-    Rafraîchit les caches à TTL expiré de manière proactive,
-    pour que les utilisateurs ne tombent jamais sur un cache miss.
-    """
-    from astream.config.settings import settings
-
-    # Attendre 5 min après le démarrage pour laisser le warmup se terminer
+    """Anticipe les expirations TTL toutes les ~1h."""
     await asyncio.sleep(300)
 
     while True:
         try:
             interval = min(settings.DYNAMIC_LIST_TTL, settings.PLANNING_TTL, 3600)
-            # Rafraîchir 60s AVANT l'expiration pour anticiper
             sleep_time = max(interval - 60, 300)
 
             await asyncio.sleep(sleep_time)
 
             logger.log("ASTREAM", "Rafraîchissement périodique des caches...")
 
-            # Homepage — si le TTL est proche de l'expiration, il sera
-            # automatiquement re-fetché par get_or_fetch
             from astream.scrapers.animesama.client import animesama_api
             await animesama_api.get_homepage_content()
 
