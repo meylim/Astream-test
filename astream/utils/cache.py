@@ -1,3 +1,11 @@
+"""
+cache.py — Version modifiée avec méthode invalidate() pour le scheduler.
+
+Changement par rapport à l'original :
+  - Ajout de CacheManager.invalidate(cache_key) pour supprimer une entrée
+    du cache SQLite. Utilisé par le scheduler pour forcer un re-fetch.
+"""
+
 from typing import Any, Optional, Dict
 from contextlib import asynccontextmanager
 from collections import defaultdict
@@ -5,6 +13,7 @@ from collections import defaultdict
 from astream.utils.database import (
     get_metadata_from_cache,
     set_metadata_to_cache,
+    delete_metadata_from_cache,
     DistributedLock
 )
 from astream.utils.logger import logger
@@ -26,6 +35,10 @@ class CacheKeys:
     @staticmethod
     def planning() -> str:
         return "as:planning"
+
+    @staticmethod
+    def planning_by_day() -> str:
+        return "as:planning:by_day"
 
 
 # ===========================
@@ -97,6 +110,18 @@ class CacheManager:
         await set_metadata_to_cache(cache_key, data, ttl)
 
     @staticmethod
+    async def invalidate(cache_key: str) -> None:
+        """
+        Supprime une entrée du cache pour forcer un re-fetch au prochain appel.
+        Utilisé par le scheduler pour rafraîchir les données journalières.
+        """
+        try:
+            await delete_metadata_from_cache(cache_key)
+            logger.log("DATABASE", f"Cache invalidé: {cache_key}")
+        except Exception as e:
+            logger.warning(f"Erreur invalidation cache {cache_key}: {e}")
+
+    @staticmethod
     @asynccontextmanager
     async def with_lock(lock_key: str, instance_id: Optional[str] = None):
         async with DistributedLock(lock_key, instance_id):
@@ -129,3 +154,4 @@ class CacheManager:
             if data:
                 await CacheManager.set(cache_key, data, ttl)
             return data
+        
