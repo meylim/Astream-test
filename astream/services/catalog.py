@@ -9,6 +9,7 @@ from astream.services.metadata import metadata_service
 from astream.utils.cache import cache_stats
 from astream.utils.stremio_helpers import StremioMetaBuilder, StremioLinkBuilder
 from astream.config.settings import settings
+from astream.utils.timing import FlowTimer, timed_step
 
 
 # ===========================
@@ -42,14 +43,20 @@ class CatalogService:
         """
         logger.log("API", f"CATALOG - Catalogue Anime-Sama demandé, recherche: {search}, genre: {genre}")
 
+        timer = FlowTimer("CATALOG", search or "homepage")
         language_filter = config.language if config.language != "Tout" else None
 
-        anime_data = await self._get_catalog_data(search, genre, language_filter)
+        async with timed_step(timer, "fetch_data"):
+            anime_data = await self._get_catalog_data(search, genre, language_filter)
         logger.log("API", f"Traitement de {len(anime_data)} anime.")
 
-        enhanced_anime_data = await self._enrich_catalog_with_tmdb(anime_data, config)
+        async with timed_step(timer, "tmdb_enrich"):
+            enhanced_anime_data = await self._enrich_catalog_with_tmdb(anime_data, config)
 
-        metas = await self._build_catalog_metas(request, b64config, enhanced_anime_data, config, metadata_service, genre)
+        async with timed_step(timer, "build_metas"):
+            metas = await self._build_catalog_metas(request, b64config, enhanced_anime_data, config, metadata_service, genre)
+
+        timer.finish()
 
         # Log résumé des stats de cache
         cache_stats.log_summary()
@@ -212,8 +219,9 @@ class CatalogService:
             homepage_anime = await self.animesama_api.get_homepage_content()
             homepage_by_slug = {a.get("slug", ""): a for a in homepage_anime}
 
-            # Trier: sorties du jour en premier
-            sorted_slugs = sorted(slugs, key=lambda s: (0 if s in today_slugs else 1))
+            # Exclure scans/mangas et trier: sorties du jour en premier
+            clean_slugs = {s for s in slugs if not is_scan_slug(s)}
+            sorted_slugs = sorted(clean_slugs, key=lambda s: (0 if s in today_slugs else 1))
 
             results = []
             for slug in sorted_slugs:
@@ -246,7 +254,8 @@ class CatalogService:
                 logger.warning("CATALOG SORTIES DU JOUR - Aucun anime aujourd'hui")
                 return []
 
-            logger.log("API", f"CATALOG SORTIES DU JOUR - {len(today_slugs)} anime aujourd'hui")
+            today_slugs = [s for s in today_slugs if not is_scan_slug(s)]
+            logger.log("API", f"CATALOG SORTIES DU JOUR - {len(today_slugs)} anime aujourd'hui (scans exclus)")
 
             # Récupérer les données homepage pour avoir les images/infos
             homepage_anime = await self.animesama_api.get_homepage_content()
@@ -301,4 +310,4 @@ class CatalogService:
 # Instance Singleton Globale
 # ===========================
 catalog_service = CatalogService()
-        
+                    
