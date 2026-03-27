@@ -25,7 +25,6 @@ async def setup_database():
         if current_version != DATABASE_VERSION:
             logger.log("DATABASE", f"Migration v{current_version} → v{DATABASE_VERSION}")
 
-            # Suppression avec triple validation: whitelist + format alphanum + longueur max
             allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb'}
 
             if settings.DATABASE_TYPE == "sqlite":
@@ -44,7 +43,6 @@ async def setup_database():
                     else:
                         logger.error(f"Tentative suppression table non autorisée: {table_name}")
             else:
-                # PostgreSQL ou autres bases de données
                 tables = await database.fetch_all("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename != 'db_version'")
                 for table in tables:
                     table_name = table['tablename']
@@ -148,9 +146,6 @@ async def set_metadata_to_cache(cache_id: str, data, ttl: int = None):
     await database.execute(query, values)
 
 
-# ===========================
-# AJOUT : Suppression d'une entrée cache (utilisé par le scheduler)
-# ===========================
 async def delete_metadata_from_cache(cache_id: str):
     """Supprime une entrée du cache pour forcer un re-fetch."""
     if cache_id.startswith("as:"):
@@ -165,9 +160,32 @@ async def delete_metadata_from_cache(cache_id: str):
     await database.execute(query, {"cache_id": cache_id})
 
 
+async def get_cache_age(cache_id: str) -> float:
+    """
+    Retourne l'âge en secondes d'une entrée cache.
+    Retourne float('inf') si l'entrée n'existe pas ou est expirée.
+    Utilisé par sorties_du_jour pour savoir si la homepage est assez fraîche.
+    """
+    current_time = time.time()
+
+    if cache_id.startswith("as:"):
+        table_name = "animesama"
+    elif cache_id.startswith("tmdb:"):
+        table_name = "tmdb"
+    else:
+        return float('inf')
+
+    query = f"SELECT created_at FROM {table_name} WHERE key = :cache_id AND expires_at > :current_time"
+    result = await database.fetch_one(query, {"cache_id": cache_id, "current_time": current_time})
+
+    if not result or not result["created_at"]:
+        return float('inf')
+
+    return current_time - result["created_at"]
+
+
 async def _calculate_context_aware_ttl(cache_id: str) -> int:
     try:
-        # TMDB a un TTL long car les métadonnées sont stables (rarement modifiées)
         if cache_id.startswith("tmdb:"):
             return settings.TMDB_TTL
 
@@ -183,7 +201,6 @@ async def _calculate_context_aware_ttl(cache_id: str) -> int:
         if cache_id.startswith("as:search:"):
             return settings.DYNAMIC_LIST_TTL
 
-        # Smart TTL pour détails anime : court si en cours (updates fréquents), long si terminé (stable)
         if cache_id.startswith("as:") and not any(x in cache_id for x in ["search", "homepage", "planning", ":s", ":e"]):
             anime_slug = cache_id.replace("as:", "")
             from astream.scrapers.animesama.planning import get_smart_cache_ttl
@@ -208,9 +225,7 @@ async def acquire_lock(lock_key: str, instance_id: str, duration: int = None) ->
             {"lock_key": lock_key, "current_time": current_time}
         )
 
-        # Verrou distribué atomique: INSERT avec RETURNING pour vérification en une seule opération
         if settings.DATABASE_TYPE == "sqlite":
-            # SQLite: INSERT OR IGNORE puis SELECT (pattern correct car INSERT est atomique)
             await database.execute(
                 "INSERT OR IGNORE INTO scrape_lock (lock_key, instance_id, timestamp, expires_at) VALUES (:lock_key, :instance_id, :timestamp, :expires_at)",
                 {"lock_key": lock_key, "instance_id": instance_id, "timestamp": current_time, "expires_at": expires_at}
@@ -224,7 +239,6 @@ async def acquire_lock(lock_key: str, instance_id: str, duration: int = None) ->
             else:
                 return False
         else:
-            # PostgreSQL: Utiliser RETURNING pour opération atomique
             result = await database.fetch_one(
                 "INSERT INTO scrape_lock (lock_key, instance_id, timestamp, expires_at) VALUES (:lock_key, :instance_id, :timestamp, :expires_at) ON CONFLICT (lock_key) DO NOTHING RETURNING instance_id",
                 {"lock_key": lock_key, "instance_id": instance_id, "timestamp": current_time, "expires_at": expires_at}
@@ -248,9 +262,6 @@ async def release_lock(lock_key: str, instance_id: str) -> bool:
         return False
 
 
-# ===========================
-# Classe DistributedLock
-# ===========================
 class DistributedLock:
 
     def __init__(self, lock_key: str, instance_id: str = None, duration: int = None):
@@ -277,9 +288,6 @@ class DistributedLock:
             await release_lock(self.lock_key, self.instance_id)
 
 
-# ===========================
-# Classe LockAcquisitionError
-# ===========================
 class LockAcquisitionError(Exception):
     pass
 
@@ -289,4 +297,4 @@ async def teardown_database():
         await database.disconnect()
     except Exception as e:
         logger.error(f"Erreur fermeture base de données: {e}")
-        
+                        
