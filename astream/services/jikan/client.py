@@ -289,6 +289,50 @@ class JikanClient:
             logger.error(f"JIKAN: get_genres: {e}")
             return []
 
+    # ===========================
+    # Saison en cours
+    # ===========================
+    async def get_season_now(self, limit: int = 25) -> list:
+        """GET /seasons/now — Anime de la saison actuelle"""
+        cache_key = f"jikan:season_now:{limit}"
+
+        async def fetch():
+            data = await self._request("seasons/now", {"limit": limit})
+            return data.get("data", []) if data else []
+
+        try:
+            return await CacheManager.get_or_fetch(
+                cache_key=cache_key,
+                fetch_func=fetch,
+                lock_key=f"lock:{cache_key}",
+                ttl=86400,
+            ) or []
+        except Exception as e:
+            logger.error(f"JIKAN: get_season_now: {e}")
+            return []
+
+    # ===========================
+    # Prochaine saison
+    # ===========================
+    async def get_season_upcoming(self, limit: int = 25) -> list:
+        """GET /seasons/upcoming — Anime de la prochaine saison"""
+        cache_key = f"jikan:season_upcoming:{limit}"
+
+        async def fetch():
+            data = await self._request("seasons/upcoming", {"limit": limit})
+            return data.get("data", []) if data else []
+
+        try:
+            return await CacheManager.get_or_fetch(
+                cache_key=cache_key,
+                fetch_func=fetch,
+                lock_key=f"lock:{cache_key}",
+                ttl=86400,
+            ) or []
+        except Exception as e:
+            logger.error(f"JIKAN: get_season_upcoming: {e}")
+            return []
+
 
 # ===========================
 # Instance Singleton Globale

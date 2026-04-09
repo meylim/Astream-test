@@ -285,6 +285,31 @@ class JikanService:
             return list(MANIFEST_GENRES)
 
 
+    # ----------------------------
+    # Saison en cours
+    # ----------------------------
+    async def get_season_now(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Anime de la saison en cours (printemps/été/automne/hiver)."""
+        logger.log("JIKAN", "Saison en cours")
+        raw = await self.client.get_season_now(limit=limit)
+        raw.sort(key=lambda a: a.get("score") or 0, reverse=True)
+        results = [jikan_to_astream(a) for a in raw if a.get("mal_id")]
+        logger.log("JIKAN", f"Saison en cours: {len(results)} anime")
+        return results
+
+    # ----------------------------
+    # Prochaine saison
+    # ----------------------------
+    async def get_season_upcoming(self, limit: int = 25) -> List[Dict[str, Any]]:
+        """Anime annoncés pour la prochaine saison."""
+        logger.log("JIKAN", "Prochaine saison")
+        raw = await self.client.get_season_upcoming(limit=limit)
+        raw.sort(key=lambda a: a.get("members") or 0, reverse=True)
+        results = [jikan_to_astream(a) for a in raw if a.get("mal_id")]
+        logger.log("JIKAN", f"Prochaine saison: {len(results)} anime")
+        return results
+
+
 # ===========================
 # Instance Singleton Globale
 # ===========================

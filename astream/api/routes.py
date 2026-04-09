@@ -8,7 +8,8 @@ from astream.utils.filters import get_all_excluded_domains
 from astream.utils.validators import validate_config, ConfigModel
 from astream.utils.logger import logger
 from astream.services.stream import stream_service
-from astream.services.catalog import catalog_service
+from astream.services.catalog import catalog_service, GENRE_CATALOG_MAP
+from fastapi import HTTPException
 from astream.services.metadata import metadata_service
 
 
@@ -365,31 +366,31 @@ async def catalog_sorties_du_jour_default(request: Request) -> Dict[str, List[Di
 
 
 # ===========================
-# Catalogues Jikan
+# Catalogues Jikan — Découverte & Home
 # ===========================
+
+def _make_catalog_route(get_fn_name: str):
+    """Helper pour générer des paires de routes (avec/sans b64config)."""
+    pass
+
+
 @main.get("/{b64config}/catalog/anime/jikan_simulcasts.json", summary="Simulcasts en cours")
 async def catalog_jikan_simulcasts(
     request: Request,
     b64config: str = Path(..., description="Configuration encodée en base64")
-) -> Dict[str, List[Dict[str, Any]]]:
+):
     try:
-        config_dict = validate_config(b64config)
-        config = ConfigModel(**config_dict)
-        metas = await catalog_service.get_simulcasts_catalog(request, b64config, config)
-        return {"metas": metas}
+        config = ConfigModel(**validate_config(b64config))
+        return {"metas": await catalog_service.get_simulcasts_catalog(request, b64config, config)}
     except Exception as e:
-        logger.error(f"Erreur catalogue simulcasts: {e}")
+        logger.error(f"Erreur simulcasts: {e}")
         return {"metas": []}
 
-
 @main.get("/catalog/anime/jikan_simulcasts.json", summary="Simulcasts (défaut)")
-async def catalog_jikan_simulcasts_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+async def catalog_jikan_simulcasts_default(request: Request):
     try:
-        config = ConfigModel()
-        metas = await catalog_service.get_simulcasts_catalog(request, None, config)
-        return {"metas": metas}
+        return {"metas": await catalog_service.get_simulcasts_catalog(request, None, ConfigModel())}
     except Exception as e:
-        logger.error(f"Erreur catalogue simulcasts: {e}")
         return {"metas": []}
 
 
@@ -397,25 +398,19 @@ async def catalog_jikan_simulcasts_default(request: Request) -> Dict[str, List[D
 async def catalog_jikan_films(
     request: Request,
     b64config: str = Path(..., description="Configuration encodée en base64")
-) -> Dict[str, List[Dict[str, Any]]]:
+):
     try:
-        config_dict = validate_config(b64config)
-        config = ConfigModel(**config_dict)
-        metas = await catalog_service.get_films_catalog(request, b64config, config)
-        return {"metas": metas}
+        config = ConfigModel(**validate_config(b64config))
+        return {"metas": await catalog_service.get_films_catalog(request, b64config, config)}
     except Exception as e:
-        logger.error(f"Erreur catalogue films: {e}")
+        logger.error(f"Erreur films: {e}")
         return {"metas": []}
 
-
-@main.get("/catalog/anime/jikan_films.json", summary="Films d'anime (défaut)")
-async def catalog_jikan_films_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+@main.get("/catalog/anime/jikan_films.json", summary="Films (défaut)")
+async def catalog_jikan_films_default(request: Request):
     try:
-        config = ConfigModel()
-        metas = await catalog_service.get_films_catalog(request, None, config)
-        return {"metas": metas}
+        return {"metas": await catalog_service.get_films_catalog(request, None, ConfigModel())}
     except Exception as e:
-        logger.error(f"Erreur catalogue films: {e}")
         return {"metas": []}
 
 
@@ -423,52 +418,125 @@ async def catalog_jikan_films_default(request: Request) -> Dict[str, List[Dict[s
 async def catalog_jikan_top(
     request: Request,
     b64config: str = Path(..., description="Configuration encodée en base64")
-) -> Dict[str, List[Dict[str, Any]]]:
+):
     try:
-        config_dict = validate_config(b64config)
-        config = ConfigModel(**config_dict)
-        metas = await catalog_service.get_top_anime_catalog(request, b64config, config)
-        return {"metas": metas}
+        config = ConfigModel(**validate_config(b64config))
+        return {"metas": await catalog_service.get_top_anime_catalog(request, b64config, config)}
     except Exception as e:
-        logger.error(f"Erreur catalogue top anime: {e}")
+        logger.error(f"Erreur top: {e}")
+        return {"metas": []}
+
+@main.get("/catalog/anime/jikan_top.json", summary="Top (défaut)")
+async def catalog_jikan_top_default(request: Request):
+    try:
+        return {"metas": await catalog_service.get_top_anime_catalog(request, None, ConfigModel())}
+    except Exception as e:
         return {"metas": []}
 
 
-@main.get("/catalog/anime/jikan_top.json", summary="Top Anime (défaut)")
-async def catalog_jikan_top_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
-    try:
-        config = ConfigModel()
-        metas = await catalog_service.get_top_anime_catalog(request, None, config)
-        return {"metas": metas}
-    except Exception as e:
-        logger.error(f"Erreur catalogue top anime: {e}")
-        return {"metas": []}
-
-
-@main.get("/{b64config}/catalog/anime/jikan_sorties_du_jour.json", summary="Sorties du jour (Jikan)")
+@main.get("/{b64config}/catalog/anime/jikan_sorties_du_jour.json", summary="Sorties du jour")
 async def catalog_jikan_sorties(
     request: Request,
     b64config: str = Path(..., description="Configuration encodée en base64")
-) -> Dict[str, List[Dict[str, Any]]]:
+):
     try:
-        config_dict = validate_config(b64config)
-        config = ConfigModel(**config_dict)
-        metas = await catalog_service.get_sorties_du_jour_catalog(request, b64config, config)
-        return {"metas": metas}
+        config = ConfigModel(**validate_config(b64config))
+        return {"metas": await catalog_service.get_sorties_du_jour_catalog(request, b64config, config)}
     except Exception as e:
-        logger.error(f"Erreur catalogue sorties du jour Jikan: {e}")
+        logger.error(f"Erreur sorties du jour: {e}")
+        return {"metas": []}
+
+@main.get("/catalog/anime/jikan_sorties_du_jour.json", summary="Sorties du jour (défaut)")
+async def catalog_jikan_sorties_default(request: Request):
+    try:
+        return {"metas": await catalog_service.get_sorties_du_jour_catalog(request, None, ConfigModel())}
+    except Exception as e:
         return {"metas": []}
 
 
-@main.get("/catalog/anime/jikan_sorties_du_jour.json", summary="Sorties du jour Jikan (défaut)")
-async def catalog_jikan_sorties_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
+@main.get("/{b64config}/catalog/anime/jikan_saison.json", summary="Saison en cours")
+async def catalog_jikan_saison(
+    request: Request,
+    b64config: str = Path(..., description="Configuration encodée en base64")
+):
     try:
-        config = ConfigModel()
-        metas = await catalog_service.get_sorties_du_jour_catalog(request, None, config)
-        return {"metas": metas}
+        config = ConfigModel(**validate_config(b64config))
+        return {"metas": await catalog_service.get_season_now_catalog(request, b64config, config)}
     except Exception as e:
-        logger.error(f"Erreur catalogue sorties du jour Jikan: {e}")
+        logger.error(f"Erreur saison: {e}")
         return {"metas": []}
+
+@main.get("/catalog/anime/jikan_saison.json", summary="Saison en cours (défaut)")
+async def catalog_jikan_saison_default(request: Request):
+    try:
+        return {"metas": await catalog_service.get_season_now_catalog(request, None, ConfigModel())}
+    except Exception as e:
+        return {"metas": []}
+
+
+@main.get("/{b64config}/catalog/anime/jikan_prochaine_saison.json", summary="Prochaine saison")
+async def catalog_jikan_prochaine_saison(
+    request: Request,
+    b64config: str = Path(..., description="Configuration encodée en base64")
+):
+    try:
+        config = ConfigModel(**validate_config(b64config))
+        return {"metas": await catalog_service.get_season_upcoming_catalog(request, b64config, config)}
+    except Exception as e:
+        logger.error(f"Erreur prochaine saison: {e}")
+        return {"metas": []}
+
+@main.get("/catalog/anime/jikan_prochaine_saison.json", summary="Prochaine saison (défaut)")
+async def catalog_jikan_prochaine_saison_default(request: Request):
+    try:
+        return {"metas": await catalog_service.get_season_upcoming_catalog(request, None, ConfigModel())}
+    except Exception as e:
+        return {"metas": []}
+
+
+# ===========================
+# Catalogues par genre — route générique (catch-all jikan_genre_*)
+# Un seul handler couvre les 16 genres du manifest
+# ===========================
+@main.get("/{b64config}/catalog/anime/{catalog_id}.json", summary="Catalogue genre Jikan")
+async def catalog_jikan_genre(
+    request: Request,
+    catalog_id: str = Path(..., description="ID du catalogue genre (ex: jikan_genre_action)"),
+    b64config: str = Path(..., description="Configuration encodée en base64"),
+):
+    """
+    Route générique pour tous les catalogues jikan_genre_*.
+    Doit être déclarée APRÈS les routes spécifiques pour ne pas les masquer.
+    """
+    if not catalog_id.startswith("jikan_genre_"):
+        raise HTTPException(status_code=404, detail=f"Catalogue inconnu: {catalog_id}")
+    try:
+        config = ConfigModel(**validate_config(b64config))
+        metas = await catalog_service.get_genre_catalog(request, b64config, config, catalog_id)
+        return {"metas": metas}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur genre catalog {catalog_id}: {e}")
+        return {"metas": []}
+
+
+@main.get("/catalog/anime/{catalog_id}.json", summary="Catalogue genre Jikan (défaut)")
+async def catalog_jikan_genre_default(
+    request: Request,
+    catalog_id: str = Path(..., description="ID du catalogue genre"),
+):
+    if not catalog_id.startswith("jikan_genre_"):
+        raise HTTPException(status_code=404, detail=f"Catalogue inconnu: {catalog_id}")
+    try:
+        metas = await catalog_service.get_genre_catalog(request, None, ConfigModel(), catalog_id)
+        return {"metas": metas}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur genre catalog {catalog_id}: {e}")
+        return {"metas": []}
+
 
 
 @main.get("/health", summary="État de santé", description="Retourne l'état de santé actuel du service")

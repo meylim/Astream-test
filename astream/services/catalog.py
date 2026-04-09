@@ -5,9 +5,8 @@ from astream.utils.logger import logger
 from astream.scrapers.animesama.client import animesama_api
 from astream.scrapers.animesama.helpers import parse_genres_string
 from astream.services.tmdb.service import tmdb_service
-from astream.services.metadata import metadata_service
 from astream.services.jikan.service import jikan_service
-from astream.utils.cache import cache_stats, CacheManager
+from astream.utils.cache import cache_stats
 from astream.utils.stremio_helpers import StremioMetaBuilder, StremioLinkBuilder
 from astream.config.settings import settings
 
@@ -16,6 +15,49 @@ from astream.config.settings import settings
 # Sémaphore TMDB
 # ===========================
 _tmdb_semaphore = asyncio.Semaphore(5)
+
+# ===========================
+# Mapping catalog_id → genre Jikan
+# Utilisé par les routes génériques et le manifest
+# ===========================
+GENRE_CATALOG_MAP: Dict[str, str] = {
+    "jikan_genre_action":        "Action",
+    "jikan_genre_adventure":     "Adventure",
+    "jikan_genre_comedy":        "Comedy",
+    "jikan_genre_drama":         "Drama",
+    "jikan_genre_fantasy":       "Fantasy",
+    "jikan_genre_romance":       "Romance",
+    "jikan_genre_sci_fi":        "Sci-Fi",
+    "jikan_genre_slice_of_life": "Slice of Life",
+    "jikan_genre_supernatural":  "Supernatural",
+    "jikan_genre_sports":        "Sports",
+    "jikan_genre_horror":        "Horror",
+    "jikan_genre_psychological": "Psychological",
+    "jikan_genre_shounen":       "Shounen",
+    "jikan_genre_isekai":        "Isekai",
+    "jikan_genre_mecha":         "Mecha",
+    "jikan_genre_historical":    "Historical",
+}
+
+# Emojis pour les genres (affiché dans le nom du catalogue Stremio)
+GENRE_EMOJI: Dict[str, str] = {
+    "Action":        "⚔️",
+    "Adventure":     "🗺️",
+    "Comedy":        "😂",
+    "Drama":         "🎭",
+    "Fantasy":       "✨",
+    "Romance":       "💕",
+    "Sci-Fi":        "🚀",
+    "Slice of Life": "☀️",
+    "Supernatural":  "👻",
+    "Sports":        "⚽",
+    "Horror":        "😱",
+    "Psychological": "🧠",
+    "Shounen":       "🔥",
+    "Isekai":        "🌀",
+    "Mecha":         "🤖",
+    "Historical":    "⛩️",
+}
 
 
 class CatalogService:
@@ -26,9 +68,15 @@ class CatalogService:
         self.jikan_service = jikan_service
 
     # ===========================
-    # CATALOGUE PRINCIPAL — Jikan (recherche + genre)
+    # CATALOGUE PRINCIPAL — Recherche + genre filter
     # ===========================
     async def get_complete_catalog(self, request, b64config, search=None, genre=None, config=None):
+        """
+        Catalogue de recherche principal (barre de recherche Stremio).
+        - Pas de query : mix simulcasts + top populaires
+        - Query : Jikan search (Romaji natif, titres alternatifs)
+        - Genre : Jikan genre filter
+        """
         logger.log("API", f"CATALOG — recherche: {search}, genre: {genre}")
         anime_data = await self._get_jikan_catalog_data(search, genre)
         logger.log("API", f"Traitement de {len(anime_data)} anime.")
@@ -62,13 +110,14 @@ class CatalogService:
                         result.append(item)
                 return result[:25]
         except Exception as e:
-            logger.error(f"Erreur récupération catalogue Jikan: {e}")
+            logger.error(f"Erreur catalogue Jikan: {e}")
             return []
 
     # ===========================
-    # GENRES — depuis Jikan
+    # GENRES (manifest)
     # ===========================
     async def extract_unique_genres(self):
+        """Genres pour l'extra 'genre' du catalogue principal."""
         try:
             genres = await self.jikan_service.get_manifest_genres()
             logger.debug(f"Genres Jikan: {len(genres)}")
@@ -78,72 +127,117 @@ class CatalogService:
             return []
 
     # ===========================
-    # SORTIES DU JOUR — Planning Jikan du jour
+    # SORTIES DU JOUR
     # ===========================
     async def get_sorties_du_jour_catalog(self, request, b64config, config):
+        """Anime diffusés aujourd'hui selon le planning Jikan."""
         try:
             results = await self.jikan_service.get_today_releases()
             if not results:
-                logger.warning("CATALOG SORTIES DU JOUR — Aucun anime aujourd'hui")
                 return []
             logger.log("API", f"CATALOG SORTIES DU JOUR — {len(results)} anime")
             enhanced = await self._enrich_catalog_with_tmdb(results, config)
-            metas = await self._build_catalog_metas(request, b64config, enhanced, config)
-            logger.log("API", f"CATALOG SORTIES DU JOUR — {len(metas)} retournés")
-            return metas
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
         except Exception as e:
-            logger.error(f"Erreur catalogue sorties du jour: {e}")
+            logger.error(f"Erreur sorties du jour: {e}")
             return []
 
     # ===========================
-    # SIMULCASTS — Anime TV en cours
+    # SIMULCASTS
     # ===========================
     async def get_simulcasts_catalog(self, request, b64config, config):
+        """Anime TV actuellement en cours, triés par score MAL."""
         try:
             results = await self.jikan_service.get_simulcasts(limit=25)
             if not results:
                 return []
-            logger.log("API", f"CATALOG SIMULCASTS — {len(results)} anime")
             enhanced = await self._enrich_catalog_with_tmdb(results, config)
-            metas = await self._build_catalog_metas(request, b64config, enhanced, config)
-            logger.log("API", f"CATALOG SIMULCASTS — {len(metas)} retournés")
-            return metas
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
         except Exception as e:
-            logger.error(f"Erreur catalogue simulcasts: {e}")
+            logger.error(f"Erreur simulcasts: {e}")
             return []
 
     # ===========================
-    # FILMS — Films d'anime
+    # FILMS
     # ===========================
     async def get_films_catalog(self, request, b64config, config):
+        """Films d'anime triés par score MAL."""
         try:
             results = await self.jikan_service.get_films(limit=25)
             if not results:
                 return []
-            logger.log("API", f"CATALOG FILMS — {len(results)} films")
             enhanced = await self._enrich_catalog_with_tmdb(results, config)
-            metas = await self._build_catalog_metas(request, b64config, enhanced, config)
-            logger.log("API", f"CATALOG FILMS — {len(metas)} retournés")
-            return metas
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
         except Exception as e:
-            logger.error(f"Erreur catalogue films: {e}")
+            logger.error(f"Erreur films: {e}")
             return []
 
     # ===========================
     # TOP ANIME
     # ===========================
     async def get_top_anime_catalog(self, request, b64config, config):
+        """Top anime par popularité MAL."""
         try:
             results = await self.jikan_service.get_top_anime(filter_type="bypopularity", limit=25)
             if not results:
                 return []
-            logger.log("API", f"CATALOG TOP — {len(results)} anime")
             enhanced = await self._enrich_catalog_with_tmdb(results, config)
-            metas = await self._build_catalog_metas(request, b64config, enhanced, config)
-            logger.log("API", f"CATALOG TOP — {len(metas)} retournés")
-            return metas
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
         except Exception as e:
-            logger.error(f"Erreur catalogue top anime: {e}")
+            logger.error(f"Erreur top anime: {e}")
+            return []
+
+    # ===========================
+    # SAISON EN COURS
+    # ===========================
+    async def get_season_now_catalog(self, request, b64config, config):
+        """Anime de la saison actuelle (printemps/été/automne/hiver)."""
+        try:
+            results = await self.jikan_service.get_season_now(limit=25)
+            if not results:
+                return []
+            enhanced = await self._enrich_catalog_with_tmdb(results, config)
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
+        except Exception as e:
+            logger.error(f"Erreur saison en cours: {e}")
+            return []
+
+    # ===========================
+    # PROCHAINE SAISON
+    # ===========================
+    async def get_season_upcoming_catalog(self, request, b64config, config):
+        """Anime annoncés pour la prochaine saison."""
+        try:
+            results = await self.jikan_service.get_season_upcoming(limit=25)
+            if not results:
+                return []
+            enhanced = await self._enrich_catalog_with_tmdb(results, config)
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
+        except Exception as e:
+            logger.error(f"Erreur prochaine saison: {e}")
+            return []
+
+    # ===========================
+    # CATALOGUE PAR GENRE (générique)
+    # ===========================
+    async def get_genre_catalog(self, request, b64config, config, catalog_id: str):
+        """
+        Catalogue dédié pour un genre spécifique.
+        catalog_id : ex. 'jikan_genre_action' → genre 'Action'
+        """
+        genre_name = GENRE_CATALOG_MAP.get(catalog_id)
+        if not genre_name:
+            logger.warning(f"CATALOG GENRE — catalog_id inconnu: {catalog_id}")
+            return []
+        try:
+            results = await self.jikan_service.get_by_genre(genre_name=genre_name, limit=25)
+            if not results:
+                return []
+            logger.log("API", f"CATALOG GENRE '{genre_name}' — {len(results)} anime")
+            enhanced = await self._enrich_catalog_with_tmdb(results, config)
+            return await self._build_catalog_metas(request, b64config, enhanced, config)
+        except Exception as e:
+            logger.error(f"Erreur genre '{genre_name}': {e}")
             return []
 
     # ===========================
@@ -196,7 +290,6 @@ class CatalogService:
 
                 meta = StremioMetaBuilder.build_catalog_meta(anime, config)
 
-                # Score MAL comme fallback si pas de rating TMDB
                 if not meta.get("imdbRating") and anime.get("mal_score"):
                     meta["imdbRating"] = str(anime["mal_score"])
 
@@ -207,7 +300,7 @@ class CatalogService:
                 meta["genres"] = genres
                 metas.append(meta)
             except Exception as e:
-                logger.error(f"Erreur meta pour {anime.get('slug','?')}: {e}")
+                logger.error(f"Erreur meta pour {anime.get('slug', '?')}: {e}")
 
         logo_count = sum(1 for a in anime_data if a.get("logo"))
         logger.log("API", f"CATALOG — {len(metas)} metas, {logo_count} avec logo TMDB")

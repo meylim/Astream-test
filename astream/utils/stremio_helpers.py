@@ -22,9 +22,15 @@ class StremioMetaBuilder:
         # Priorité : _meta_id (Jikan) > as:{slug} (Anime-Sama natif)
         meta_id = anime_data.get("_meta_id") or f"as:{anime_slug}"
 
+        # Type Stremio : movie pour les films Jikan, anime sinon
+        if anime_data.get("_is_movie"):
+            stremio_type = "movie"
+        else:
+            stremio_type = "anime"
+
         meta = {
             "id": meta_id,
-            "type": "anime",
+            "type": stremio_type,
             "name": anime_title,
             "posterShape": "poster",
         }

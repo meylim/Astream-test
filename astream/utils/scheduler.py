@@ -67,14 +67,27 @@ async def _warmup_jikan() -> None:
         logger.log("ASTREAM", "  ⏳ Jikan : chargement des catalogues...")
 
         # Toutes les requêtes en séquence (rate limit Jikan : 3 req/s)
+        from astream.services.jikan.service import GENRE_CATALOG_MAP
+        from astream.services.jikan.service import JIKAN_GENRE_ID_MAP
+
         tasks_info = [
-            ("Planning du jour",   jikan_client.get_schedules(today_en)),
-            ("Simulcasts",         jikan_client.get_airing(limit=25)),
-            ("Films",              jikan_client.get_movies(limit=25)),
-            ("Top popularité",     jikan_client.get_top_anime(filter_type="bypopularity", limit=25)),
-            ("Top airing",         jikan_client.get_top_anime(filter_type="airing", limit=25)),
-            ("Genres",             jikan_client.get_genres()),
+            ("Planning du jour",    jikan_client.get_schedules(today_en)),
+            ("Simulcasts",          jikan_client.get_airing(limit=25)),
+            ("Films",               jikan_client.get_movies(limit=25)),
+            ("Top popularité",      jikan_client.get_top_anime(filter_type="bypopularity", limit=25)),
+            ("Top airing",          jikan_client.get_top_anime(filter_type="airing", limit=25)),
+            ("Saison en cours",     jikan_client.get_season_now(limit=25)),
+            ("Prochaine saison",    jikan_client.get_season_upcoming(limit=25)),
+            ("Genres",              jikan_client.get_genres()),
         ]
+
+        # Ajouter tous les genres du manifest
+        for catalog_id, genre_name in GENRE_CATALOG_MAP.items():
+            genre_id = JIKAN_GENRE_ID_MAP.get(genre_name)
+            if genre_id:
+                tasks_info.append(
+                    (f"Genre {genre_name}", jikan_client.get_anime_by_genre(genre_id=genre_id, limit=25))
+                )
 
         for label, coro in tasks_info:
             try:
@@ -127,7 +140,8 @@ async def _warmup_tmdb(anime_list: list) -> None:
 
 async def _warmup_tmdb_jikan() -> None:
     """
-    Pré-charge TMDB pour les résultats Jikan (simulcasts + films + top).
+    Pré-charge TMDB pour tous les catalogues Jikan :
+    simulcasts, films, top, saison, prochaine saison et les 16 genres.
     Appelé après _warmup_jikan() pour que les données soient déjà en cache Jikan.
     """
     if not settings.TMDB_API_KEY:
@@ -135,27 +149,41 @@ async def _warmup_tmdb_jikan() -> None:
 
     try:
         from astream.services.jikan.service import jikan_service
+        from astream.services.catalog import GENRE_CATALOG_MAP
 
-        logger.log("ASTREAM", "  ⏳ TMDB×Jikan : enrichissement des catalogues Jikan...")
+        logger.log("ASTREAM", "  ⏳ TMDB×Jikan : enrichissement de tous les catalogues Jikan...")
 
         all_anime = []
         seen_ids = set()
 
-        for coro_name, coro in [
-            ("simulcasts", jikan_service.get_simulcasts(limit=25)),
-            ("films",      jikan_service.get_films(limit=25)),
-            ("top",        jikan_service.get_top_anime(limit=25)),
+        def _collect(items):
+            for item in (items or []):
+                mid = item.get("mal_id")
+                if mid and mid not in seen_ids:
+                    seen_ids.add(mid)
+                    all_anime.append(item)
+
+        # Catalogues principaux (lus depuis le cache Jikan)
+        for label, coro in [
+            ("simulcasts",       jikan_service.get_simulcasts(limit=25)),
+            ("films",            jikan_service.get_films(limit=25)),
+            ("top",              jikan_service.get_top_anime(limit=25)),
+            ("saison_now",       jikan_service.get_season_now(limit=25)),
+            ("saison_upcoming",  jikan_service.get_season_upcoming(limit=25)),
         ]:
             try:
-                items = await coro
-                for item in items:
-                    mid = item.get("mal_id")
-                    if mid and mid not in seen_ids:
-                        seen_ids.add(mid)
-                        all_anime.append(item)
+                _collect(await coro)
             except Exception as e:
-                logger.error(f"    ✗ Jikan {coro_name} pour TMDB : {e}")
+                logger.error(f"    ✗ TMDB collect {label} : {e}")
 
+        # Tous les genres du manifest
+        for catalog_id, genre_name in GENRE_CATALOG_MAP.items():
+            try:
+                _collect(await jikan_service.get_by_genre(genre_name=genre_name, limit=25))
+            except Exception as e:
+                logger.error(f"    ✗ TMDB collect genre {genre_name} : {e}")
+
+        logger.log("ASTREAM", f"  ⏳ TMDB×Jikan : enrichissement de {len(all_anime)} anime uniques...")
         if all_anime:
             await _warmup_tmdb(all_anime)
 
@@ -257,18 +285,28 @@ async def refresh_daily_caches() -> None:
     # --- Jikan : invalider tous les caches Jikan ---
     logger.log("ASTREAM", "② Jikan : invalidation + rechargement")
     try:
+        from astream.services.jikan.service import GENRE_CATALOG_MAP, JIKAN_GENRE_ID_MAP
+
         jikan_cache_keys = [
             "jikan:airing:25",
             "jikan:movies:25",
             "jikan:top:bypopularity:25",
             "jikan:top:airing:25",
+            "jikan:season_now:25",
+            "jikan:season_upcoming:25",
             "jikan:genres",
         ]
-        # Invalider le planning du jour (dépend du jour de la semaine)
+        # Invalider le planning du jour
         day_map = {0: "monday", 1: "tuesday", 2: "wednesday",
                    3: "thursday", 4: "friday", 5: "saturday", 6: "sunday"}
         today_key = f"jikan:schedule:{day_map.get(datetime.now().weekday(), 'monday')}"
         jikan_cache_keys.append(today_key)
+
+        # Invalider tous les caches genre
+        for genre_name in GENRE_CATALOG_MAP.values():
+            genre_id = JIKAN_GENRE_ID_MAP.get(genre_name)
+            if genre_id:
+                jikan_cache_keys.append(f"jikan:genre:{genre_id}:25")
 
         for key in jikan_cache_keys:
             try:

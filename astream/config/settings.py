@@ -126,7 +126,7 @@ def get_base_manifest() -> Dict[str, Any]:
         "name": settings.ADDON_NAME,
         "description": f"{settings.ADDON_NAME} – Addon non officiel pour accéder au contenu d'Anime-Sama",
         "version": "2.1.4",
-        "catalogs": [
+                "catalogs": [
             {
                 "type": "anime",
                 "id": "animesama_catalog",
@@ -150,6 +150,12 @@ def get_base_manifest() -> Dict[str, Any]:
             },
             {
                 "type": "anime",
+                "id": "jikan_saison",
+                "name": "🌸 Saison en cours",
+                "extra": []
+            },
+            {
+                "type": "anime",
                 "id": "jikan_top",
                 "name": "🏆 Top Anime",
                 "extra": []
@@ -158,6 +164,108 @@ def get_base_manifest() -> Dict[str, Any]:
                 "type": "anime",
                 "id": "jikan_films",
                 "name": "🎬 Films d\'anime",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_prochaine_saison",
+                "name": "🔮 Prochaine saison",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_action",
+                "name": "⚔️ Action",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_adventure",
+                "name": "🗺️ Aventure",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_comedy",
+                "name": "😂 Comédie",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_drama",
+                "name": "🎭 Drame",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_fantasy",
+                "name": "✨ Fantasy",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_romance",
+                "name": "💕 Romance",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_sci_fi",
+                "name": "🚀 Sci-Fi",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_slice_of_life",
+                "name": "☀️ Slice of Life",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_supernatural",
+                "name": "👻 Surnaturel",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_sports",
+                "name": "⚽ Sports",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_horror",
+                "name": "😱 Horreur",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_psychological",
+                "name": "🧠 Psychologique",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_shounen",
+                "name": "🔥 Shounen",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_isekai",
+                "name": "🌀 Isekai",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_mecha",
+                "name": "🤖 Mecha",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_genre_historical",
+                "name": "⛩️ Historique",
                 "extra": []
             },
             {
@@ -181,7 +289,7 @@ def get_base_manifest() -> Dict[str, Any]:
         ],
         "resources": [
             "catalog",
-            {"name": "meta", "types": ["anime"], "idPrefixes": ["as", "jikan"]},
+            {"name": "meta", "types": ["anime", "movie", "series"], "idPrefixes": ["as", "jikan"]},
             {"name": "stream", "types": ["movie", "series", "anime"], "idPrefixes": ["tt", "kitsu", "as", "jikan"]}
         ],
         "types": ["movie", "series", "anime"],
