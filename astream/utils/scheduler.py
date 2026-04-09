@@ -67,7 +67,7 @@ async def _warmup_jikan() -> None:
         logger.log("ASTREAM", "  ⏳ Jikan : chargement des catalogues...")
 
         # Toutes les requêtes en séquence (rate limit Jikan : 3 req/s)
-        from astream.services.jikan.service import GENRE_CATALOG_MAP
+        from astream.services.catalog import GENRE_CATALOG_MAP
         from astream.services.jikan.service import JIKAN_GENRE_ID_MAP
 
         tasks_info = [
@@ -285,7 +285,8 @@ async def refresh_daily_caches() -> None:
     # --- Jikan : invalider tous les caches Jikan ---
     logger.log("ASTREAM", "② Jikan : invalidation + rechargement")
     try:
-        from astream.services.jikan.service import GENRE_CATALOG_MAP, JIKAN_GENRE_ID_MAP
+        from astream.services.catalog import GENRE_CATALOG_MAP
+        from astream.services.jikan.service import JIKAN_GENRE_ID_MAP
 
         jikan_cache_keys = [
             "jikan:airing:25",

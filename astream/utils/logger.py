@@ -26,6 +26,7 @@ def setup_logger():
     logger.level("PERFORMANCE", no=35, icon="⚡", color="<fg #FFEB3B>")
     logger.level("DATASET", no=33, icon="📦", color="<fg #607D8B>")
     logger.level("ID_RESOLVER", no=36, icon="🔗", color="<fg #FF9800>")
+    logger.level("JIKAN", no=44, icon="🗾", color="<fg #E91E63>")
 
     logger.level("INFO", icon="💡", color="<fg #00BCD4>")
     logger.level("DEBUG", icon="🔍", color="<fg #795548>")
