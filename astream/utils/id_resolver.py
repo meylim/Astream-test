@@ -20,6 +20,32 @@ from astream.utils.cache import CacheManager
 # ===========================
 KITSU_API_BASE = "https://kitsu.app/api/edge"
 KITSU_ANILIST_BASE = "https://graphql.anilist.co"
+JIKAN_API_BASE = "https://api.jikan.moe/v4"
+
+
+# ===========================
+# Résolution Jikan MAL ID → titres
+# ===========================
+async def _resolve_jikan_mal_id(mal_id: str, http_client) -> Optional[Dict[str, str]]:
+    """
+    Interroge l'API Jikan pour récupérer les titres d'un anime via son MAL ID.
+    Retourne un dict avec les clés 'en', 'ja', 'canonical'.
+    """
+    try:
+        url = f"{JIKAN_API_BASE}/anime/{mal_id}"
+        response = await http_client.get(url)
+        response.raise_for_status()
+        data = response.json()
+        anime = data.get("data", {})
+
+        return {
+            "en": anime.get("title_english") or "",
+            "ja": anime.get("title") or "",  # Généralement en Romaji
+            "canonical": anime.get("title_english") or anime.get("title") or "",
+        }
+    except Exception as e:
+        logger.warning(f"ID_RESOLVER: Erreur Jikan pour MAL {mal_id}: {e}")
+        return None
 
 
 # ===========================
@@ -147,6 +173,17 @@ async def resolve_external_id_to_slug(
     cache_key = f"as:id_resolve:{external_id}"
 
     async def do_resolve():
+        # --- Jikan ID (jikan:MAL_ID) ---
+        jikan_match = re.match(r'^jikan:(\d+)$', external_id)
+        if jikan_match:
+            mal_id = jikan_match.group(1)
+            logger.log("ID_RESOLVER", f"Résolution Jikan MAL ID: {mal_id}")
+            titles = await _resolve_jikan_mal_id(mal_id, http_client)
+            if not titles:
+                return None
+            slug = await _find_slug_from_titles(titles, animesama_api)
+            return {"slug": slug} if slug else None
+
         # --- Kitsu ID ---
         kitsu_match = re.match(r'^kitsu[:\-]?(\d+)$', external_id)
         if kitsu_match:
@@ -201,6 +238,22 @@ def extract_episode_info_from_id(episode_id: str):
     # Format Stremio pour series: id:season:episode
     parts = episode_id.split(":")
 
+    # Cas jikan:12345:season:episode (4 parties)
+    if parts[0] == "jikan" and len(parts) == 4:
+        external_id = f"jikan:{parts[1]}"
+        try:
+            return external_id, int(parts[2]), int(parts[3])
+        except ValueError:
+            return None
+
+    # Cas jikan:12345:episode (3 parties — saison implicite = 1)
+    if parts[0] == "jikan" and len(parts) == 3:
+        external_id = f"jikan:{parts[1]}"
+        try:
+            return external_id, 1, int(parts[2])
+        except ValueError:
+            return None
+
     # Cas kitsu:12345:season:episode (4 parties)
     if parts[0] == "kitsu" and len(parts) == 4:
         external_id = f"kitsu:{parts[1]}"
@@ -231,8 +284,11 @@ def extract_episode_info_from_id(episode_id: str):
         except ValueError:
             return None
 
-    # Cas movie : ID seul sans épisode (tt1234567 ou kitsu:12345)
+    # Cas movie : ID seul sans épisode (tt1234567 ou kitsu:12345 ou jikan:12345)
     if re.match(r'^tt\d+$', episode_id) or re.match(r'^kitsu[:\-]?\d+$', episode_id):
+        return episode_id, 1, 1
+
+    if re.match(r'^jikan:\d+$', episode_id):
         return episode_id, 1, 1
 
     return None

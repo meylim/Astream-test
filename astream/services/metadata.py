@@ -46,6 +46,10 @@ class MetadataService:
         Returns:
             Dictionnaire meta Stremio complet
         """
+        # --- Résolution ID Jikan (jikan:MAL_ID) — chemin spécial ---
+        if anime_id.startswith("jikan:"):
+            return await self._get_jikan_meta(anime_id, config, request, b64config)
+
         # --- Résolution ID externe (tt.../kitsu...) ---
         if is_external_id(anime_id):
             from astream.scrapers.animesama.client import animesama_api as _api
@@ -285,6 +289,82 @@ class MetadataService:
                 return enriched
 
         return False
+
+
+    # ===========================
+    # Chemin Jikan : méta sans Anime-Sama (si slug non résolvable)
+    # ===========================
+    async def _get_jikan_meta(self, anime_id: str, config, request, b64config: str) -> Dict[str, Any]:
+        """
+        Construit les métadonnées pour un anime Jikan.
+        1. Essaie de résoudre vers un slug Anime-Sama → méta complète avec épisodes
+        2. Fallback : méta partielle depuis Jikan + enrichissement TMDB
+        """
+        from astream.services.jikan.service import jikan_service
+        from astream.scrapers.animesama.client import animesama_api as _api
+
+        # Étape 1 : tentative de résolution vers Anime-Sama
+        resolved_slug = await resolve_external_id_to_slug(anime_id, global_http_client, _api)
+
+        if resolved_slug:
+            logger.log("ID_RESOLVER", f"META Jikan: {anime_id} → slug AS: {resolved_slug}")
+            anime_data = await self._get_anime_details(resolved_slug)
+            if anime_data:
+                enhanced = await self._apply_tmdb_enhancement(anime_data, config, self.tmdb_service, "métadonnées")
+                tmdb_episodes_map = {}
+                if config.tmdbEnabled and (config.tmdbApiKey or settings.TMDB_API_KEY):
+                    try:
+                        tmdb_episodes_map = await self.tmdb_service.get_episodes_mapping(enhanced, config)
+                    except Exception:
+                        pass
+                seasons = enhanced.get("seasons", [])
+                episodes_map = await self._build_episodes_mapping(seasons, resolved_slug, animesama_player)
+                intelligent_tmdb_map = await self._create_tmdb_episodes_mapping(
+                    config, enhanced, self.tmdb_service, tmdb_episodes_map, seasons, episodes_map
+                )
+                videos = await self._build_videos_list(
+                    seasons, episodes_map, intelligent_tmdb_map, enhanced,
+                    resolved_slug, self.animesama_api, config
+                )
+                meta = StremioMetaBuilder.build_detail_meta(enhanced, videos, config)
+                # Garder l'ID Jikan original pour cohérence
+                meta["id"] = anime_id
+                genres = enhanced.get("genres", [])
+                if isinstance(genres, str):
+                    genres = parse_genres_string(genres)
+                meta["genres"] = genres
+                meta["links"] = (
+                    StremioLinkBuilder.build_genre_links(request, b64config, genres)
+                    + StremioLinkBuilder.build_imdb_link(enhanced)
+                )
+                return meta
+
+        # Étape 2 : fallback — méta partielle depuis Jikan + TMDB
+        logger.log("JIKAN", f"META fallback Jikan pour {anime_id} (pas de slug AS trouvé)")
+        import re as _re
+        mal_match = _re.match(r"^jikan:(\d+)$", anime_id)
+        if not mal_match:
+            return {}
+
+        mal_id = int(mal_match.group(1))
+        jikan_data = await jikan_service.get_anime(mal_id)
+        if not jikan_data:
+            return {}
+
+        enhanced = await self._apply_tmdb_enhancement(jikan_data, config, self.tmdb_service, "métadonnées Jikan")
+        genres = enhanced.get("genres", [])
+        meta = StremioMetaBuilder.build_detail_meta(enhanced, [], config)
+        meta["id"] = anime_id
+        meta["genres"] = genres if isinstance(genres, list) else []
+        meta["links"] = (
+            StremioLinkBuilder.build_genre_links(request, b64config, meta["genres"])
+            + StremioLinkBuilder.build_imdb_link(enhanced)
+        )
+        # Informations supplémentaires Jikan
+        if enhanced.get("mal_score"):
+            meta.setdefault("description", "")
+            meta["description"] = (meta.get("description", "") or "").strip()
+        return meta
 
 
 # ===========================

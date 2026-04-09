@@ -69,6 +69,7 @@ class AppSettings(BaseSettings):
     LOG_LEVEL: Optional[str] = "DEBUG"
     TMDB_API_KEY: Optional[str] = None
     TMDB_TTL: Optional[int] = 604800
+    JIKAN_TTL: Optional[int] = 3600
 
 
 # ===========================
@@ -129,11 +130,35 @@ def get_base_manifest() -> Dict[str, Any]:
             {
                 "type": "anime",
                 "id": "animesama_catalog",
-                "name": "Anime-Sama",
+                "name": "🔍 Recherche Anime",
                 "extra": [
                     {"name": "search", "isRequired": False},
                     {"name": "genre", "isRequired": False, "options": []}
                 ]
+            },
+            {
+                "type": "anime",
+                "id": "jikan_sorties_du_jour",
+                "name": "📅 Sorties du jour",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_simulcasts",
+                "name": "📡 Simulcasts en cours",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_top",
+                "name": "🏆 Top Anime",
+                "extra": []
+            },
+            {
+                "type": "anime",
+                "id": "jikan_films",
+                "name": "🎬 Films d\'anime",
+                "extra": []
             },
             {
                 "type": "anime",
@@ -156,8 +181,8 @@ def get_base_manifest() -> Dict[str, Any]:
         ],
         "resources": [
             "catalog",
-            {"name": "meta", "types": ["anime"], "idPrefixes": ["as"]},
-            {"name": "stream", "types": ["movie", "series", "anime"], "idPrefixes": ["tt", "kitsu", "as"]}
+            {"name": "meta", "types": ["anime"], "idPrefixes": ["as", "jikan"]},
+            {"name": "stream", "types": ["movie", "series", "anime"], "idPrefixes": ["tt", "kitsu", "as", "jikan"]}
         ],
         "types": ["movie", "series", "anime"],
         "logo": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg",

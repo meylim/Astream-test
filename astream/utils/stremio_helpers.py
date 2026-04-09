@@ -19,8 +19,11 @@ class StremioMetaBuilder:
         if not anime_title:
             anime_title = anime_slug.replace('-', ' ').title() if anime_slug else 'Titre indisponible'
 
+        # Priorité : _meta_id (Jikan) > as:{slug} (Anime-Sama natif)
+        meta_id = anime_data.get("_meta_id") or f"as:{anime_slug}"
+
         meta = {
-            "id": f"as:{anime_slug}",
+            "id": meta_id,
             "type": "anime",
             "name": anime_title,
             "posterShape": "poster",
