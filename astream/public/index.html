@@ -9,7 +9,6 @@
     <meta content="#7c3aed" data-react-helmet="true" name="theme-color" />
     <link rel="icon" type="image/x-icon" href="https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg">
 
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.400.0/lucide.min.css">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1591,13 +1590,21 @@
                                 <i data-lucide="key"></i>
                                 Votre clé API TMDB (optionnelle)
                             </label>
-                            <input 
-                                type="password" 
-                                id="tmdbApiKey" 
-                                class="form-input" 
-                                placeholder="Collez votre clé API TMDB ici..."
-                                maxlength="50"
-                            >
+                            <div style="display:flex;gap:8px;align-items:center;">
+                                <input 
+                                    type="password" 
+                                    id="tmdbApiKey" 
+                                    class="form-input" 
+                                    placeholder="Collez votre clé API TMDB ici..."
+                                    maxlength="200"
+                                    style="flex:1;"
+                                >
+                                <button type="button" id="tmdbTestBtn" onclick="testTmdbKey()" 
+                                    style="padding:8px 14px;border-radius:8px;border:1px solid var(--primary);background:transparent;color:var(--primary);cursor:pointer;white-space:nowrap;font-size:0.85rem;">
+                                    Tester
+                                </button>
+                            </div>
+                            <div id="tmdbTestResult" style="margin-top:6px;font-size:0.85rem;display:none;"></div>
                             <small class="form-help">
                                 Si fournie, votre clé sera utilisée à la place de celle de l'hôte. 
                                 <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">Obtenir une clé API gratuite</a>
@@ -1728,9 +1735,13 @@
     <!-- ===========================
          Scripts
          =========================== -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lucide/0.447.0/umd/lucide.min.js"></script>
     <script>
-        lucide.createIcons();
+        function initLucide() {
+            if (window.lucide) {
+                if (window.lucide) { lucide.createIcons(); }
+            }
+        }
 
         function showPage(pageId) {
             document.querySelectorAll('.page').forEach(page => {
@@ -1826,7 +1837,7 @@
                 });
 
                 if (window.lucide) {
-                    lucide.createIcons();
+                    if (window.lucide) { lucide.createIcons(); }
                 }
 
                 addButtonListeners();
@@ -1991,7 +2002,16 @@
 
         window.addEventListener('popstate', initializeFromHash);
 
-        initializeFromHash();
+        // Init Lucide icons + page once DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', function() {
+                initLucide();
+                initializeFromHash();
+            });
+        } else {
+            initLucide();
+            initializeFromHash();
+        }
 
         function copySection(sectionId, event) {
             const url = `${window.location.origin}${window.location.pathname}#${sectionId}`;
@@ -2046,14 +2066,14 @@
             button.style.borderColor = 'var(--accent)';
             button.innerHTML = '<i data-lucide="check"></i>';
 
-            lucide.createIcons();
+            if (window.lucide) { lucide.createIcons(); }
 
             setTimeout(() => {
                 button.style.background = '';
                 button.style.color = '';
                 button.style.borderColor = '';
                 button.innerHTML = originalHTML;
-                lucide.createIcons();
+                if (window.lucide) { lucide.createIcons(); }
             }, 1500);
         }
 
@@ -2203,7 +2223,7 @@
                 `;
             }).join('');
 
-            lucide.createIcons();
+            if (window.lucide) { lucide.createIcons(); }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -2225,6 +2245,49 @@
             button.addEventListener('click', addUserExclusion);
         });
 
-    </script>
+        // ===========================
+        // Test cle TMDB
+        // ===========================
+        async function testTmdbKey() {
+            const key = document.getElementById('tmdbApiKey').value.trim();
+            const resultDiv = document.getElementById('tmdbTestResult');
+            const btn = document.getElementById('tmdbTestBtn');
+
+            if (!key) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = '<span style="color:var(--warning)">Saisissez une cle avant de tester.</span>';
+                return;
+            }
+
+            btn.disabled = true;
+            btn.textContent = '...';
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<span style="color:#aaa">Verification en cours...</span>';
+
+            try {
+                const res = await fetch('/api/test-tmdb?key=' + encodeURIComponent(key));
+                const data = await res.json();
+
+                if (data.valid) {
+                    resultDiv.innerHTML = '<span style="color:var(--accent)">OK - Cle valide ! Les metadonnees TMDB sont activees.</span>';
+                    const tmdbEn = document.getElementById('tmdbEnabled');
+                    const tmdbEp = document.getElementById('tmdbEpisodeMapping');
+                    if (tmdbEn) { tmdbEn.disabled = false; }
+                    if (tmdbEp) { tmdbEp.disabled = false; }
+                    document.querySelectorAll('.modern-radio-label.disabled').forEach(el => el.classList.remove('disabled'));
+                    const note = document.getElementById('tmdbRequiredNote');
+                    if (note) note.style.display = 'none';
+                } else {
+                    resultDiv.innerHTML = '<span style="color:var(--danger)">Cle invalide : ' + (data.error || 'Erreur inconnue') + '</span>';
+                }
+            } catch (e) {
+                resultDiv.innerHTML = '<span style="color:var(--danger)">Erreur reseau : ' + e.message + '</span>';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Tester';
+            }
+        }
+
+            </script>
 </body>
 </html>

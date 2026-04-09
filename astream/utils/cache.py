@@ -5,6 +5,8 @@ from collections import defaultdict
 from astream.utils.database import (
     get_metadata_from_cache,
     set_metadata_to_cache,
+    delete_metadata_from_cache,
+    get_cache_age,
     DistributedLock
 )
 from astream.utils.logger import logger
@@ -27,26 +29,26 @@ class CacheKeys:
     def planning() -> str:
         return "as:planning"
 
+    @staticmethod
+    def planning_by_day() -> str:
+        return "as:planning:by_day"
+
 
 # ===========================
 # Statistiques de cache
 # ===========================
 class CacheStats:
-    """Collecte des statistiques de cache par catégorie"""
 
     def __init__(self):
         self.stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"hits": 0, "misses": 0})
 
     def record_hit(self, category: str):
-        """Enregistre un cache hit"""
         self.stats[category]["hits"] += 1
 
     def record_miss(self, category: str):
-        """Enregistre un cache miss"""
         self.stats[category]["misses"] += 1
 
     def get_summary(self) -> Dict[str, Dict[str, Any]]:
-        """Retourne un résumé des statistiques"""
         summary = {}
         for category, counts in self.stats.items():
             total = counts["hits"] + counts["misses"]
@@ -60,7 +62,6 @@ class CacheStats:
         return summary
 
     def log_summary(self):
-        """Log le résumé des statistiques avec le level INFO"""
         summary = self.get_summary()
         if not summary:
             return
@@ -72,11 +73,9 @@ class CacheStats:
             )
 
     def reset(self):
-        """Réinitialise les statistiques"""
         self.stats.clear()
 
 
-# Instance globale des statistiques
 cache_stats = CacheStats()
 
 
@@ -95,6 +94,34 @@ class CacheManager:
     @staticmethod
     async def set(cache_key: str, data: Any, ttl: Optional[int] = None) -> None:
         await set_metadata_to_cache(cache_key, data, ttl)
+
+    @staticmethod
+    async def invalidate(cache_key: str) -> None:
+        try:
+            await delete_metadata_from_cache(cache_key)
+            logger.log("DATABASE", f"Cache invalidé: {cache_key}")
+        except Exception as e:
+            logger.warning(f"Erreur invalidation cache {cache_key}: {e}")
+
+    @staticmethod
+    async def invalidate_if_older_than(cache_key: str, max_age_seconds: int) -> bool:
+        """
+        Invalide le cache si l'entrée est plus vieille que max_age_seconds.
+        Retourne True si le cache a été invalidé, False sinon.
+
+        Utilisé par les sorties du jour pour forcer un refresh de la homepage
+        si elle est trop vieille — les épisodes sortent tout au long de la journée.
+        """
+        try:
+            age = await get_cache_age(cache_key)
+            if age > max_age_seconds:
+                await delete_metadata_from_cache(cache_key)
+                logger.log("DATABASE", f"Cache {cache_key} invalidé (âge: {int(age)}s > max: {max_age_seconds}s)")
+                return True
+            return False
+        except Exception as e:
+            logger.warning(f"Erreur vérification âge cache {cache_key}: {e}")
+            return False
 
     @staticmethod
     @asynccontextmanager
@@ -129,3 +156,4 @@ class CacheManager:
             if data:
                 await CacheManager.set(cache_key, data, ttl)
             return data
+          

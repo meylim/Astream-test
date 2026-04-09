@@ -10,6 +10,7 @@ from astream.scrapers.animesama.details import get_or_fetch_anime_details
 from astream.scrapers.animesama.video_resolver import AnimeSamaVideoResolver
 from astream.utils.data_loader import get_dataset_loader
 from astream.utils.cache import CacheManager
+from astream.utils.timing import FlowTimer, timed_step
 from astream.utils.id_resolver import resolve_external_id_to_slug, is_external_id, extract_episode_info_from_id
 from astream.config.settings import settings
 from astream.utils.languages import filter_by_language, sort_by_language_priority
@@ -41,29 +42,31 @@ class StreamService:
         Returns:
             Liste des streams formatés pour Stremio
         """
+        timer = FlowTimer("STREAM", episode_id)
         try:
             # --- Résolution ID externe (tt.../kitsu...) ---
-            if is_external_id(episode_id):
-                ext_info = extract_episode_info_from_id(episode_id)
-                if not ext_info:
-                    logger.warning(f"ID externe non parsable: {episode_id}")
-                    return []
-                external_id, season_number, episode_number = ext_info
-                anime_slug = await resolve_external_id_to_slug(
-                    external_id, http_client, animesama_api
-                )
-                if not anime_slug:
-                    logger.warning(f"Impossible de résoudre {external_id} vers un slug Anime-Sama")
-                    return []
-                logger.log("ID_RESOLVER", f"{external_id} → slug: {anime_slug}")
-            else:
-                parsed_id = MediaIdParser.parse_episode_id(episode_id)
-                if not parsed_id or parsed_id['is_metadata_only']:
-                    logger.error(f"Episode_id invalide ou métadonnées seulement: {episode_id}")
-                    return []
-                anime_slug = parsed_id['anime_slug']
-                season_number = parsed_id['season_number']
-                episode_number = parsed_id['episode_number']
+            async with timed_step(timer, "id_resolve"):
+                if is_external_id(episode_id):
+                    ext_info = extract_episode_info_from_id(episode_id)
+                    if not ext_info:
+                        logger.warning(f"ID externe non parsable: {episode_id}")
+                        return []
+                    external_id, season_number, episode_number = ext_info
+                    anime_slug = await resolve_external_id_to_slug(
+                        external_id, http_client, animesama_api
+                    )
+                    if not anime_slug:
+                        logger.warning(f"Impossible de résoudre {external_id} vers un slug Anime-Sama")
+                        return []
+                    logger.log("ID_RESOLVER", f"{external_id} → slug: {anime_slug}")
+                else:
+                    parsed_id = MediaIdParser.parse_episode_id(episode_id)
+                    if not parsed_id or parsed_id['is_metadata_only']:
+                        logger.error(f"Episode_id invalide ou métadonnées seulement: {episode_id}")
+                        return []
+                    anime_slug = parsed_id['anime_slug']
+                    season_number = parsed_id['season_number']
+                    episode_number = parsed_id['episode_number']
 
             logger.log("STREAM", f"Récupération streams {anime_slug} S{season_number}E{episode_number}")
             cache_key = f"as:{anime_slug}:s{season_number}e{episode_number}"
@@ -109,46 +112,51 @@ class StreamService:
                 logger.log("DATABASE", f"Cache set {cache_key} - {len(unique_players)} players fusionnés (dataset + scraping)")
                 return cache_data
 
-            cached_players = await CacheManager.get_or_fetch(
-                cache_key=cache_key,
-                fetch_func=fetch_player_urls,
-                lock_key=lock_key,
-                ttl=settings.EPISODE_TTL
-            )
+            async with timed_step(timer, "cache_lookup"):
+                cached_players = await CacheManager.get_or_fetch(
+                    cache_key=cache_key,
+                    fetch_func=fetch_player_urls,
+                    lock_key=lock_key,
+                    ttl=settings.EPISODE_TTL
+                )
 
             player_urls_with_language = cached_players.get("player_urls", []) if cached_players else []
 
-            if player_urls_with_language:
-                video_http_client = await self._get_http_client()
-                resolver = AnimeSamaVideoResolver(video_http_client)
+            async with timed_step(timer, "video_resolve"):
+                if player_urls_with_language:
+                    video_http_client = await self._get_http_client()
+                    resolver = AnimeSamaVideoResolver(video_http_client)
 
-                logger.log("STREAM", f"Extraction vidéos depuis {len(player_urls_with_language)} URLs")
-                video_urls_with_language = await resolver.extract_video_urls_from_players_with_language(
-                    player_urls_with_language, config
-                )
-                unique_streams = []
-                for video_data in video_urls_with_language:
-                    video_url = video_data.get("url", "")
-                    language = video_data.get("language", "VOSTFR")
-
-                    unique_streams.append(
-                        format_stream_for_stremio(video_url, language, anime_slug, season_number)
+                    logger.log("STREAM", f"Extraction vidéos depuis {len(player_urls_with_language)} URLs")
+                    video_urls_with_language = await resolver.extract_video_urls_from_players_with_language(
+                        player_urls_with_language, config
                     )
+                    unique_streams = []
+                    for video_data in video_urls_with_language:
+                        video_url = video_data.get("url", "")
+                        language = video_data.get("language", "VOSTFR")
 
-                logger.log("STREAM", f"Résultat: {len(unique_streams)} streams extraits")
-            else:
-                unique_streams = []
+                        unique_streams.append(
+                            format_stream_for_stremio(video_url, language, anime_slug, season_number)
+                        )
+
+                    logger.log("STREAM", f"Résultat: {len(unique_streams)} streams extraits")
+                else:
+                    unique_streams = []
 
             logger.log("STREAM", f"Résultat final: {len(unique_streams)} streams uniques")
 
-            if language_filter and language_filter != "Tout":
-                unique_streams = filter_by_language(unique_streams, language_filter)
-            if language_order:
-                unique_streams = sort_by_language_priority(unique_streams, language_order)
+            async with timed_step(timer, "filter_sort"):
+                if language_filter and language_filter != "Tout":
+                    unique_streams = filter_by_language(unique_streams, language_filter)
+                if language_order:
+                    unique_streams = sort_by_language_priority(unique_streams, language_order)
 
+            timer.finish()
             return unique_streams
 
         except Exception as e:
+            timer.finish()
             logger.error(f"Erreur récupération streams {episode_id}: {e}")
             return []
 
@@ -226,4 +234,4 @@ class StreamService:
 # Instance Singleton
 # ===========================
 stream_service = StreamService()
-                
+            

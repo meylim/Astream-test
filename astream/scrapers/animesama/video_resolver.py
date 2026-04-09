@@ -106,14 +106,26 @@ class AnimeSamaVideoResolver(BaseScraper):
             response.raise_for_status()
             html = response.text
 
-            pattern = r'player\.src\(\[\{src:\s*["\']([^"\'\']+)["\']'
-            match = re.search(pattern, html)
+            # Plusieurs patterns car Sibnet change parfois sa structure HTML
+            sibnet_patterns = [
+                r'player\.src\(\[\{src:\s*["\']([^"\'\']+)["\']',
+                r'src:\s*["\']([^"\']*\.mp4[^"\']*)["\']',
+                r'src:\s*["\']([^"\']*\.m3u8[^"\']*)["\']',
+                r'file:\s*["\']([^"\']+)["\']',
+                r'"src":\s*"([^"]+)"',
+            ]
 
-            if not match:
+            redirect_url = None
+            for pat in sibnet_patterns:
+                m = re.search(pat, html)
+                if m:
+                    redirect_url = m.group(1)
+                    break
+
+            if not redirect_url:
                 logger.warning(f"Pattern player.src non trouvé dans {player_url}")
                 return None
 
-            redirect_url = match.group(1)
 
             if redirect_url.startswith('/'):
                 redirect_url = f"https://video.sibnet.ru{redirect_url}"
@@ -150,3 +162,4 @@ class AnimeSamaVideoResolver(BaseScraper):
         except Exception as e:
             logger.warning(f"Erreur extraction Sibnet: {e}")
             return None
+                                        
