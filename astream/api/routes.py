@@ -92,6 +92,11 @@ async def manifest(
 @main.get("/{b64config}/catalog/anime/animesama_catalog/search={search}.json", summary="Recherche d'anime", description="Recherche d'anime par titre avec configuration")
 @main.get("/{b64config}/catalog/anime/animesama_catalog/genre={genre}.json", summary="Filtrage par genre", description="Filtre le catalogue par genre avec configuration")
 @main.get("/{b64config}/catalog/anime/animesama_catalog/search={search}&genre={genre}.json", summary="Recherche et filtrage", description="Recherche d'anime par titre et genre avec configuration")
+# Miroirs /catalog/series/ pour Stremio
+@main.get("/{b64config}/catalog/series/animesama_catalog.json")
+@main.get("/{b64config}/catalog/series/animesama_catalog/search={search}.json")
+@main.get("/{b64config}/catalog/series/animesama_catalog/genre={genre}.json")
+@main.get("/{b64config}/catalog/series/animesama_catalog/search={search}&genre={genre}.json")
 async def animesama_catalog(
     request: Request,
     b64config: Optional[str] = None,
@@ -250,6 +255,11 @@ async def manifest_default(request: Request) -> Dict[str, Any]:
 @main.get("/catalog/anime/animesama_catalog/search={search}.json", summary="Recherche d'anime", description="Recherche d'anime par titre")
 @main.get("/catalog/anime/animesama_catalog/genre={genre}.json", summary="Filtrage par genre", description="Filtre le catalogue par genre")
 @main.get("/catalog/anime/animesama_catalog/search={search}&genre={genre}.json", summary="Recherche et filtrage", description="Recherche d'anime par titre et genre")
+# Miroirs /catalog/series/ (Stremio utilise le type déclaré dans le manifest)
+@main.get("/catalog/series/animesama_catalog.json")
+@main.get("/catalog/series/animesama_catalog/search={search}.json")
+@main.get("/catalog/series/animesama_catalog/genre={genre}.json")
+@main.get("/catalog/series/animesama_catalog/search={search}&genre={genre}.json")
 async def catalog_default(request: Request) -> Dict[str, List[Dict[str, Any]]]:
     try:
         search = request.query_params.get("search")

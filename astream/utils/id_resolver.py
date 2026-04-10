@@ -161,24 +161,74 @@ async def _resolve_imdb_id(imdb_id: str, http_client) -> Optional[Dict[str, str]
 # ===========================
 # Recherche du slug sur Anime-Sama
 # ===========================
+def _strip_season_suffix(title: str) -> str:
+    """
+    Supprime les suffixes de saison pour trouver la franchise racine.
+    Ex: "Re:Zero 2nd Season Part 2" → "Re:Zero"
+         "Attack on Titan Season 3" → "Attack on Titan"
+    """
+    import re as _re
+    # Ordre important : du plus spécifique au plus général
+    patterns = [
+        r"[:\s]+(?:\d+(?:st|nd|rd|th)?\s+)?season\s+(?:part\s+\d+|cour\s+\d+|\d+)?$",
+        r"[:\s]+(?:season|saison)\s+\d+$",
+        r"\s+\d+(?:st|nd|rd|th)?\s+season.*$",
+        r"\s+season\s+\d+.*$",
+        r"\s+part\s+\d+$",
+        r"\s+cour\s+\d+$",
+        r"\s+(?:ii|iii|iv|2nd|3rd|4th|5th)\s*(?:season|part|cour).*$",
+        r"\s+(?:second|third|fourth|fifth)\s+(?:season|part|cour).*$",
+        r"\s+\(\d{4}\)$",     # "(2020)"
+        r"\s+\d{4}$",          # trailing year
+    ]
+    cleaned = title.strip()
+    for pat in patterns:
+        cleaned = _re.sub(pat, "", cleaned, flags=_re.IGNORECASE).strip()
+    return cleaned
+
+
 async def _find_slug_from_titles(titles: Dict[str, Any], animesama_api) -> Optional[str]:
     """
-    Tente de trouver le slug Anime-Sama en cherchant avec les titres disponibles.
-    Essaie d'abord le titre canonical, ensuite tous les titres alternatifs.
+    Cherche le slug Anime-Sama en prioritisant la franchise RACINE.
+    Stratégie :
+      1. Titre racine (sans suffixe de saison) → meilleure chance de matcher AS
+      2. Titre canonical complet
+      3. Tous les titres alternatifs
     """
     candidates = []
+
+    # Priorité 1 : racine franchise (strip season suffix)
+    for key in ("canonical", "en", "original"):
+        t = titles.get(key, "")
+        if t:
+            root = _strip_season_suffix(t)
+            if root and root != t and root not in candidates:
+                candidates.insert(0, root)  # en tête de liste
+
+    # Priorité 2 : titres complets
     if titles.get("canonical"):
         candidates.append(titles["canonical"])
     if titles.get("en") and titles["en"] not in candidates:
         candidates.append(titles["en"])
     if titles.get("original") and titles["original"] not in candidates:
         candidates.append(titles["original"])
-    # Ajouter les titres alternatifs non encore essayés
     for t in titles.get("all_titles", []):
         if t and t not in candidates:
             candidates.append(t)
+            # Ajouter aussi la version racine de chaque titre alternatif
+            root = _strip_season_suffix(t)
+            if root and root != t and root not in candidates:
+                candidates.append(root)
 
-    for title in candidates:
+    # Dédupliqer en conservant l'ordre
+    seen = set()
+    unique = []
+    for c in candidates:
+        if c and c not in seen:
+            seen.add(c)
+            unique.append(c)
+
+    for title in unique:
         if not title or len(title) < 2:
             continue
         try:

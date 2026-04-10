@@ -48,12 +48,19 @@ class JikanClient:
                 response = await self.client.get(url, params=params or {})
                 _last_request_time = time.monotonic()
 
-                # Rate limit atteint → attente et retry
+                # Rate limit atteint → attente et retry (Jikan impose 1s entre requêtes)
                 if response.status_code == 429:
-                    logger.warning("JIKAN: Rate limit 429 — pause 2s")
-                    await asyncio.sleep(2.0)
+                    logger.warning("JIKAN: Rate limit 429 — pause 3s")
+                    await asyncio.sleep(3.0)
+                    _last_request_time = time.monotonic()
                     response = await self.client.get(url, params=params or {})
                     _last_request_time = time.monotonic()
+                    # Second retry si encore 429
+                    if response.status_code == 429:
+                        logger.warning("JIKAN: Rate limit 429 persistant — pause 5s")
+                        await asyncio.sleep(5.0)
+                        response = await self.client.get(url, params=params or {})
+                        _last_request_time = time.monotonic()
 
                 if response.status_code == 404:
                     return None

@@ -96,8 +96,8 @@ async def _warmup_jikan() -> None:
                 logger.log("ASTREAM", f"    ✓ Jikan {label} : {count} entrées en cache")
             except Exception as e:
                 logger.error(f"    ✗ Jikan {label} : {e}")
-            # Pause légère entre les appels pour respecter le rate limit
-            await asyncio.sleep(0.5)
+            # Pause entre les appels pour respecter le rate limit Jikan (3 req/s max)
+            await asyncio.sleep(1.0)
 
         logger.log("ASTREAM", "  ✓ Jikan : tous les catalogues en cache")
 

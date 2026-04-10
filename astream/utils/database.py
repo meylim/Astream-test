@@ -25,7 +25,7 @@ async def setup_database():
         if current_version != DATABASE_VERSION:
             logger.log("DATABASE", f"Migration v{current_version} → v{DATABASE_VERSION}")
 
-            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb', 'anime_xref'}
+            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb', 'anime_xref', 'jikan', 'cinemeta'}
 
             if settings.DATABASE_TYPE == "sqlite":
                 tables = await database.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('db_version', 'sqlite_sequence')")
@@ -76,6 +76,16 @@ async def setup_database():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_key ON tmdb(key)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_expires ON tmdb(expires_at)")
 
+        # Table cache Jikan (86400s TTL par défaut)
+        await database.execute("CREATE TABLE IF NOT EXISTS jikan (key TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER, expires_at INTEGER)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_jikan_key     ON jikan(key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_jikan_expires ON jikan(expires_at)")
+
+        # Table cache Cinemeta (604800s TTL par défaut)
+        await database.execute("CREATE TABLE IF NOT EXISTS cinemeta (key TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER, expires_at INTEGER)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_cinemeta_key     ON cinemeta(key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_cinemeta_expires ON cinemeta(expires_at)")
+
         # Table de références croisées — persistante entre redémarrages
         # Mappe as_slug ↔ imdb_id ↔ tmdb_id ↔ mal_id ↔ kitsu_id
         await database.execute("""
@@ -104,8 +114,10 @@ async def setup_database():
             await database.execute("PRAGMA foreign_keys=ON")
 
         current_time = time.time()
-        await database.execute("DELETE FROM animesama WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
-        await database.execute("DELETE FROM tmdb WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM animesama  WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM tmdb      WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM jikan     WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM cinemeta  WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
 
     except Exception as e:
         logger.error(f"Erreur configuration base de données: {e}")
@@ -128,6 +140,10 @@ async def get_metadata_from_cache(cache_id: str):
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
     else:
         logger.warning(f"Préfixe de cache inconnu: {cache_id}")
         return None
@@ -149,6 +165,10 @@ async def set_metadata_to_cache(cache_id: str, data, ttl: int = None):
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
     else:
         logger.warning(f"Préfixe de cache inconnu: {cache_id}")
         return
@@ -171,6 +191,10 @@ async def delete_metadata_from_cache(cache_id: str):
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
     else:
         logger.warning(f"Préfixe de cache inconnu pour suppression: {cache_id}")
         return
@@ -191,6 +215,10 @@ async def get_cache_age(cache_id: str) -> float:
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
     else:
         return float('inf')
 
