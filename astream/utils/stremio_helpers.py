@@ -28,13 +28,14 @@ class StremioMetaBuilder:
         # 2. ID Jikan → "jikan:MAL_ID" (fallback pour items non TMDB)
         # 3. Slug natif Anime-Sama → "as:slug"
         tmdb_id = anime_data.get("tmdb_id")
-        tmdb_media_type = anime_data.get("tmdb_media_type", "tv")  # "tv" ou "movie"
+        tmdb_media_type = anime_data.get("tmdb_media_type", "tv")
 
-        if tmdb_id:
+        # Optionnel: on peut déléguer UNIQUEMENT les films à TMDB, car Cinemeta les supporte
+        if tmdb_id and tmdb_media_type == "movie":
             meta_id = f"tmdb:{tmdb_id}"
-            # Cinemeta utilise "series" et "movie" — pas "anime"
-            stremio_type = "movie" if tmdb_media_type == "movie" else "series"
+            stremio_type = "movie"
         elif anime_data.get("_meta_id"):
+            # Pour toutes les séries, on force l'utilisation de Jikan/Anime-Sama
             meta_id = anime_data["_meta_id"]
             stremio_type = "movie" if anime_data.get("_is_movie") else "anime"
         else:
