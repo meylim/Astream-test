@@ -299,6 +299,25 @@ class CatalogService:
                 )
                 meta["genres"] = genres
                 metas.append(meta)
+
+                # Pré-populer le xref en arrière-plan pour accélérer l'accès aux métas
+                # (fire-and-forget, n'attend pas le résultat)
+                if anime_slug and anime_title and not anime.get("_is_jikan"):
+                    tmdb_id = anime.get("tmdb_id")
+                    mal_id = anime.get("mal_id")
+                    if not (tmdb_id or mal_id):
+                        # Jikan items ont mal_id directement
+                        mal_id = anime.get("mal_id")
+                    import asyncio as _asyncio
+                    from astream.utils.cross_ref import get_or_resolve_xref as _get_xref
+                    from astream.utils.http_client import http_client as _hc
+                    _asyncio.create_task(_get_xref(
+                        anime_slug, anime_title, _hc,
+                        tmdb_api_key=settings.TMDB_API_KEY,
+                        existing_tmdb_id=tmdb_id,
+                        existing_mal_id=mal_id,
+                    ))
+
             except Exception as e:
                 logger.error(f"Erreur meta pour {anime.get('slug', '?')}: {e}")
 

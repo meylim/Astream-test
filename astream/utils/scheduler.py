@@ -206,6 +206,18 @@ async def warmup_startup_caches() -> None:
     logger.log("ASTREAM", "Pré-chauffage des caches au démarrage...")
     logger.log("ASTREAM", "═══════════════════════════════════════")
 
+    # --- Anime Offline Database (cross-refs) ---
+    logger.log("ASTREAM", "⓪ Anime Offline Database : chargement des cross-refs")
+    try:
+        from astream.utils.anime_db import load_anime_db
+        success = await load_anime_db()
+        if success:
+            logger.log("ASTREAM", "  ✓ Anime Offline Database chargée")
+        else:
+            logger.log("ASTREAM", "  ⚠ Anime Offline Database indisponible (dégradé)")
+    except Exception as e:
+        logger.error(f"  ✗ Anime Offline Database : {e}")
+
     homepage_anime = []
 
     # --- Anime-Sama ---
@@ -324,6 +336,18 @@ async def refresh_daily_caches() -> None:
     logger.log("ASTREAM", "③ TMDB : ré-enrichissement")
     await _warmup_tmdb(homepage_anime)
     await _warmup_tmdb_jikan()
+
+    # Rafraîchir l'Anime Offline Database une fois par semaine (pas daily pour économiser la bande)
+    try:
+        import os as _os
+        db_path = _os.path.join("data", "anime-offline-db.json")
+        import time as _time
+        if not _os.path.exists(db_path) or (_time.time() - _os.path.getmtime(db_path)) > 604800:
+            from astream.utils.anime_db import load_anime_db
+            await load_anime_db(force_refresh=True)
+            logger.log("ASTREAM", "  ✓ Anime Offline Database rafraîchie")
+    except Exception as e:
+        logger.error(f"  ✗ Anime DB refresh : {e}")
 
     logger.log("ASTREAM", "═══ Rafraîchissement journalier terminé ═══")
 

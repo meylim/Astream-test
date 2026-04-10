@@ -6,7 +6,7 @@ import asyncio
 from astream.utils.logger import logger
 from astream.config.settings import database, settings
 
-DATABASE_VERSION = "2.0"
+DATABASE_VERSION = "3.0"
 
 
 async def setup_database():
@@ -25,7 +25,7 @@ async def setup_database():
         if current_version != DATABASE_VERSION:
             logger.log("DATABASE", f"Migration v{current_version} → v{DATABASE_VERSION}")
 
-            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb'}
+            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb', 'anime_xref'}
 
             if settings.DATABASE_TYPE == "sqlite":
                 tables = await database.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('db_version', 'sqlite_sequence')")
@@ -75,6 +75,25 @@ async def setup_database():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_animesama_expires ON animesama(expires_at)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_key ON tmdb(key)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_expires ON tmdb(expires_at)")
+
+        # Table de références croisées — persistante entre redémarrages
+        # Mappe as_slug ↔ imdb_id ↔ tmdb_id ↔ mal_id ↔ kitsu_id
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS anime_xref (
+                as_slug      TEXT PRIMARY KEY,
+                imdb_id      TEXT,
+                tmdb_id      INTEGER,
+                mal_id       INTEGER,
+                kitsu_id     INTEGER,
+                cinemeta_type TEXT DEFAULT 'series',
+                title        TEXT,
+                created_at   INTEGER,
+                updated_at   INTEGER
+            )
+        """)
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_xref_imdb ON anime_xref(imdb_id)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_xref_tmdb ON anime_xref(tmdb_id)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_xref_mal  ON anime_xref(mal_id)")
 
         if settings.DATABASE_TYPE == "sqlite":
             await database.execute("PRAGMA busy_timeout=30000")

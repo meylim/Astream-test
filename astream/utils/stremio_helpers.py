@@ -19,13 +19,26 @@ class StremioMetaBuilder:
         if not anime_title:
             anime_title = anime_slug.replace('-', ' ').title() if anime_slug else 'Titre indisponible'
 
-        # Priorité : _meta_id (Jikan) > as:{slug} (Anime-Sama natif)
-        meta_id = anime_data.get("_meta_id") or f"as:{anime_slug}"
+        # ===================================================
+        # Priorité ID (architecture Stateless UI / Cinemeta)
+        # ===================================================
+        # 1. TMDB ID disponible → "tmdb:XXXXX"
+        #    Stremio délègue les méta à Cinemeta (posters HD, saisons, cast)
+        #    Notre addon ne sert que les streams.
+        # 2. ID Jikan → "jikan:MAL_ID" (fallback pour items non TMDB)
+        # 3. Slug natif Anime-Sama → "as:slug"
+        tmdb_id = anime_data.get("tmdb_id")
+        tmdb_media_type = anime_data.get("tmdb_media_type", "tv")  # "tv" ou "movie"
 
-        # Type Stremio : movie pour les films Jikan, anime sinon
-        if anime_data.get("_is_movie"):
-            stremio_type = "movie"
+        if tmdb_id:
+            meta_id = f"tmdb:{tmdb_id}"
+            # Cinemeta utilise "series" et "movie" — pas "anime"
+            stremio_type = "movie" if tmdb_media_type == "movie" else "series"
+        elif anime_data.get("_meta_id"):
+            meta_id = anime_data["_meta_id"]
+            stremio_type = "movie" if anime_data.get("_is_movie") else "anime"
         else:
+            meta_id = f"as:{anime_slug}"
             stremio_type = "anime"
 
         meta = {

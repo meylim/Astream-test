@@ -65,6 +65,11 @@ class TMDBService:
 
             enhanced_data = anime_data.copy()
 
+            # Stocker l'ID TMDB numérique et le type — utilisés par stremio_helpers
+            # pour construire l'identifiant "tmdb:XXXXX" (architecture Stateless UI)
+            enhanced_data["tmdb_id"] = tmdb_anime["id"]
+            enhanced_data["tmdb_media_type"] = media_type  # "tv" ou "movie"
+
             if tmdb_details.get("images", {}).get("posters"):
                 posters = tmdb_details["images"]["posters"]
                 selected_poster = _select_best_image(posters, prefer_lang="fr") or _select_best_image(posters, prefer_lang="en")

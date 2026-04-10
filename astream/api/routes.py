@@ -539,6 +539,70 @@ async def catalog_jikan_genre_default(
 
 
 
+# ===========================
+# Miroirs /catalog/series/ et /catalog/movie/
+# Stremio appelle ces URLs selon le type déclaré dans le manifest.
+# On redirige vers les mêmes handlers que /catalog/anime/.
+# ===========================
+@main.get("/{b64config}/catalog/series/{catalog_id}.json")
+@main.get("/{b64config}/catalog/movie/{catalog_id}.json")
+async def catalog_by_type(
+    request: Request,
+    catalog_id: str = Path(...),
+    b64config: str = Path(...),
+) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Route générique pour /catalog/series/ et /catalog/movie/.
+    Redirige vers le bon service selon le catalog_id.
+    """
+    try:
+        config = ConfigModel(**validate_config(b64config))
+        metas = await _dispatch_catalog(request, b64config, config, catalog_id)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalog {catalog_id}: {e}")
+        return {"metas": []}
+
+
+@main.get("/catalog/series/{catalog_id}.json")
+@main.get("/catalog/movie/{catalog_id}.json")
+async def catalog_by_type_default(
+    request: Request,
+    catalog_id: str = Path(...),
+) -> Dict[str, List[Dict[str, Any]]]:
+    try:
+        config = ConfigModel()
+        metas = await _dispatch_catalog(request, None, config, catalog_id)
+        return {"metas": metas}
+    except Exception as e:
+        logger.error(f"Erreur catalog default {catalog_id}: {e}")
+        return {"metas": []}
+
+
+async def _dispatch_catalog(request, b64config, config, catalog_id: str):
+    """Dispatch vers le bon handler de catalogue selon l'ID."""
+    dispatch = {
+        "animesama_catalog":        catalog_service.get_complete_catalog,
+        "jikan_sorties_du_jour":    lambda r, b, c: catalog_service.get_sorties_du_jour_catalog(r, b, c),
+        "jikan_simulcasts":         lambda r, b, c: catalog_service.get_simulcasts_catalog(r, b, c),
+        "jikan_saison":             lambda r, b, c: catalog_service.get_season_now_catalog(r, b, c),
+        "jikan_top":                lambda r, b, c: catalog_service.get_top_anime_catalog(r, b, c),
+        "jikan_films":              lambda r, b, c: catalog_service.get_films_catalog(r, b, c),
+        "jikan_prochaine_saison":   lambda r, b, c: catalog_service.get_season_upcoming_catalog(r, b, c),
+        "animesama_en_cours":       lambda r, b, c: catalog_service.get_en_cours_catalog(r, b, c),
+        "animesama_nouveautes":     lambda r, b, c: catalog_service.get_nouveautes_catalog(r, b, c),
+        "animesama_sorties_du_jour":lambda r, b, c: catalog_service.get_sorties_du_jour_catalog(r, b, c),
+    }
+    if catalog_id in dispatch:
+        fn = dispatch[catalog_id]
+        if catalog_id == "animesama_catalog":
+            return await fn(request=request, b64config=b64config, config=config)
+        return await fn(request, b64config, config)
+    if catalog_id.startswith("jikan_genre_"):
+        return await catalog_service.get_genre_catalog(request, b64config, config, catalog_id)
+    return []
+
+
 @main.get("/health", summary="État de santé", description="Retourne l'état de santé actuel du service")
 async def health() -> Dict[str, str]:
     return {"status": "ok"}

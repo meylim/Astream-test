@@ -88,10 +88,13 @@ class StreamService:
                         return []
                     logger.log("ID_RESOLVER", f"{external_id} → slug: {anime_slug}")
 
-                    # --- Correction saison pour films Jikan ---
-                    # Jikan résout toujours en s1e1, mais Anime-Sama stocke les films en saison 990.
-                    # On vérifie si la saison 1 existe réellement ; sinon on tente la saison film.
-                    if external_id.startswith("jikan:") and season_number == 1:
+                    # --- Correction saison pour films / mauvais mapping ---
+                    # Jikan et TMDB résolvent les films en s1e1, mais Anime-Sama
+                    # stocke les films en saison 990. On auto-détecte.
+                    if season_number == 1 and (
+                        external_id.startswith("jikan:")
+                        or external_id.startswith("tmdb:")
+                    ):
                         season_number, episode_number = await _resolve_jikan_movie_season(
                             anime_slug, season_number, episode_number
                         )

@@ -1,5 +1,19 @@
+"""
+MetadataService — Pilier central de l'addon.
+
+Chaîne de priorité pour construire la fiche d'un anime :
+  1. Cinemeta   → structure des saisons/épisodes, titre officiel, synopsis EN,
+                   poster/background, note IMDb, durée, cast
+  2. Jikan/MAL  → poster haute qualité, score MAL, genres anime, status,
+                   synopsis alternatif si Cinemeta n'en a pas
+  3. TMDB       → images HD (logo, backdrop), description FR, trailer
+  4. Anime-Sama → marquage des épisodes ayant des streams disponibles
+
+La table `anime_xref` centralise les mappings d'IDs entre ces sources.
+"""
 import asyncio
-from typing import Dict, Any, Optional, TYPE_CHECKING
+import re
+from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 from astream.utils.logger import logger
 from astream.scrapers.animesama.client import animesama_api
@@ -7,10 +21,12 @@ from astream.scrapers.animesama.player import animesama_player
 from astream.scrapers.animesama.details import get_or_fetch_anime_details
 from astream.services.tmdb.service import tmdb_service
 from astream.services.tmdb.client import TMDBClient
+from astream.services.cinemeta.client import cinemeta_client
 from astream.config.settings import settings, SEASON_TYPE_FILM
 from astream.scrapers.animesama.helpers import parse_genres_string
 from astream.utils.stremio_helpers import StremioMetaBuilder, StremioLinkBuilder
 from astream.utils.id_resolver import resolve_external_id_to_slug, is_external_id
+from astream.utils.cross_ref import get_xref, get_or_resolve_xref, save_xref
 from astream.utils.http_client import http_client as global_http_client
 
 if TYPE_CHECKING:
@@ -23,352 +39,508 @@ if TYPE_CHECKING:
 # ===========================
 class MetadataService:
     """
-    Service responsable de la gestion des métadonnées d'anime.
-    Gère la récupération des détails, la construction des listes de vidéos,
-    et l'enrichissement TMDB des métadonnées.
+    Construit les métadonnées complètes d'un anime pour Stremio.
+    Fusionne Cinemeta + Jikan + TMDB + Anime-Sama en un seul objet méta.
     """
 
     def __init__(self):
         self.animesama_api = animesama_api
         self.tmdb_service = tmdb_service
 
+    # ===========================
+    # Point d'entrée principal
+    # ===========================
     async def get_complete_anime_meta(self, anime_id: str, config, request, b64config: str) -> Dict[str, Any]:
         """
-        Récupère les métadonnées complètes d'un anime pour Stremio.
-        TOUTE la logique de construction des métadonnées.
-
-        Args:
-            anime_id: ID de l'anime (format: as:slug)
-            config: Configuration utilisateur
-            request: Objet Request FastAPI
-            b64config: Configuration encodée base64
-
-        Returns:
-            Dictionnaire meta Stremio complet
+        Construit la fiche complète d'un anime.
+        Supporte : as:slug, jikan:MAL_ID, tmdb:TMDB_ID, tt..., kitsu:...
         """
-        # --- Résolution ID Jikan (jikan:MAL_ID) — chemin spécial ---
+        # --- Résolution vers as:slug ---
         if anime_id.startswith("jikan:"):
-            return await self._get_jikan_meta(anime_id, config, request, b64config)
+            return await self._get_meta_from_jikan_id(anime_id, config, request, b64config)
 
-        # --- Résolution ID externe (tt.../kitsu...) ---
-        if is_external_id(anime_id):
-            from astream.scrapers.animesama.client import animesama_api as _api
-            resolved_slug = await resolve_external_id_to_slug(anime_id, global_http_client, _api)
+        if is_external_id(anime_id):  # tmdb:, tt:, kitsu:
+            resolved_slug = await resolve_external_id_to_slug(anime_id, global_http_client, self.animesama_api)
             if not resolved_slug:
-                logger.warning(f"META: Impossible de résoudre {anime_id} vers un slug Anime-Sama")
+                logger.warning(f"META: Impossible de résoudre {anime_id} → slug AS")
                 return {}
+            logger.log("ID_RESOLVER", f"META: {anime_id} → {resolved_slug}")
             anime_slug = resolved_slug
-            logger.log("ID_RESOLVER", f"META: {anime_id} → slug: {anime_slug}")
         else:
             anime_slug = anime_id.replace("as:", "")
 
-        anime_data = await self._get_anime_details(anime_slug)
-        if not anime_data:
+        return await self._build_meta_for_slug(anime_slug, config, request, b64config)
+
+    # ===========================
+    # Build principal (par slug AS)
+    # ===========================
+    async def _build_meta_for_slug(
+        self, anime_slug: str, config, request, b64config: str
+    ) -> Dict[str, Any]:
+        """
+        Construit la fiche pour un slug Anime-Sama connu.
+        Applique la chaîne de priorité : Cinemeta → Jikan → TMDB → AS
+        """
+        # 1. Données Anime-Sama (structure des saisons, épisodes disponibles)
+        as_data = await self._get_anime_details(anime_slug)
+        if not as_data:
             return {}
 
-        enhanced_anime_data = await self._apply_tmdb_enhancement(anime_data, config, self.tmdb_service, "métadonnées")
+        title = as_data.get("title", anime_slug.replace("-", " ").title())
 
-        tmdb_episodes_map = {}
-        if config.tmdbEnabled and (config.tmdbApiKey or settings.TMDB_API_KEY):
-            try:
-                tmdb_episodes_map = await self.tmdb_service.get_episodes_mapping(enhanced_anime_data, config)
-                logger.log("TMDB", f"Mapping épisodes TMDB récupéré: {len(tmdb_episodes_map)} épisodes")
-            except Exception as e:
-                logger.error(f"Erreur récupération mapping épisodes: {e}")
-                tmdb_episodes_map = {}
-
-        seasons = enhanced_anime_data.get("seasons", [])
-        episodes_map = await self._build_episodes_mapping(seasons, anime_slug, animesama_player)
-
-        intelligent_tmdb_map = await self._create_tmdb_episodes_mapping(
-            config, enhanced_anime_data, self.tmdb_service, tmdb_episodes_map, seasons, episodes_map
+        # 2. Cross-ref : récupère ou résout tous les IDs
+        tmdb_id_hint = as_data.get("tmdb_id")
+        mal_id_hint = as_data.get("mal_id")
+        xref = await get_or_resolve_xref(
+            anime_slug, title, global_http_client,
+            tmdb_api_key=config.tmdbApiKey or settings.TMDB_API_KEY,
+            existing_tmdb_id=tmdb_id_hint,
+            existing_mal_id=mal_id_hint,
         )
 
-        videos = await self._build_videos_list(
-            seasons, episodes_map, intelligent_tmdb_map, enhanced_anime_data,
-            anime_slug, self.animesama_api, config
+        imdb_id       = xref.get("imdb_id")
+        tmdb_id       = xref.get("tmdb_id")
+        mal_id        = xref.get("mal_id")
+        cinemeta_type = xref.get("cinemeta_type", "series")
+
+        # 3. Fetch en parallèle depuis toutes les sources
+        cinemeta_task = self._fetch_cinemeta(imdb_id, cinemeta_type)
+        jikan_task    = self._fetch_jikan(mal_id)
+        tmdb_task     = self._fetch_tmdb(as_data, config) if (tmdb_id or title) else asyncio.sleep(0, result=None)
+
+        cinemeta_meta, jikan_data, tmdb_data = await asyncio.gather(
+            cinemeta_task, jikan_task, tmdb_task,
+            return_exceptions=True,
+        )
+        cinemeta_meta = cinemeta_meta if not isinstance(cinemeta_meta, Exception) else None
+        jikan_data    = jikan_data    if not isinstance(jikan_data, Exception) else None
+        tmdb_data     = tmdb_data     if not isinstance(tmdb_data, Exception) else None
+
+        # 4. Construire l'objet méta fusionné
+        merged = await self._merge_metadata(
+            anime_slug, as_data, cinemeta_meta, jikan_data, tmdb_data,
+            xref, config
         )
 
-        meta = StremioMetaBuilder.build_detail_meta(enhanced_anime_data, videos, config)
+        # 5. Construire la liste de vidéos (épisodes)
+        videos = await self._build_videos(
+            anime_slug, as_data, cinemeta_meta, tmdb_data, config, xref=xref
+        )
 
-        genres = anime_data.get('genres', [])
-        if isinstance(genres, str):
-            genres = parse_genres_string(genres)
-        meta['genres'] = genres
+        # 6. Assembler la réponse Stremio
+        genres = merged.get("genres", [])
+        meta = {
+            "id": f"as:{anime_slug}",
+            "type": "series" if cinemeta_type == "series" else "movie",
+            "name": merged.get("title", title),
+            "poster": merged.get("poster"),
+            "background": merged.get("background"),
+            "logo": merged.get("logo"),
+            "description": merged.get("description"),
+            "releaseInfo": merged.get("release_info"),
+            "runtime": merged.get("runtime"),
+            "imdbRating": merged.get("imdb_rating"),
+            "genres": genres,
+            "cast": merged.get("cast", []),
+            "director": merged.get("director", []),
+            "trailers": merged.get("trailers", []),
+            "behaviorHints": {"hasScheduledVideos": True},
+            "links": (
+                StremioLinkBuilder.build_genre_links(request, b64config, genres)
+                + self._build_imdb_link(imdb_id, merged.get("imdb_rating"))
+            ),
+        }
 
-        genre_links = StremioLinkBuilder.build_genre_links(request, b64config, genres)
-        imdb_links = StremioLinkBuilder.build_imdb_link(enhanced_anime_data)
-        meta['links'] = genre_links + imdb_links
+        if videos:
+            meta["videos"] = videos
 
+        # Nettoyer les None
+        meta = {k: v for k, v in meta.items() if v is not None and v != [] and v != ""}
+
+        logger.log("API", f"META {anime_slug}: {len(videos)} épisodes | Cinemeta={'✓' if cinemeta_meta else '✗'} Jikan={'✓' if jikan_data else '✗'} TMDB={'✓' if tmdb_data else '✗'}")
         return meta
 
-    async def _get_anime_details(self, anime_slug: str) -> Optional[Dict[str, Any]]:
+    # ===========================
+    # Fetchers individuels
+    # ===========================
+    async def _fetch_cinemeta(self, imdb_id: Optional[str], media_type: str) -> Optional[Dict]:
+        if not imdb_id:
+            return None
         try:
-            anime_data = await get_or_fetch_anime_details(self.animesama_api.details, anime_slug)
-            return anime_data
+            return await cinemeta_client.get_meta(imdb_id, media_type)
         except Exception as e:
-            logger.error(f"Erreur récupération détails anime {anime_slug}: {e}")
+            logger.warning(f"META Cinemeta {imdb_id}: {e}")
             return None
 
-    async def _apply_tmdb_enhancement(self, anime_data: dict, config, tmdb_service, context: str = "") -> dict:
-        if not config.tmdbEnabled or not (config.tmdbApiKey or settings.TMDB_API_KEY):
-            return anime_data
-
-        if not anime_data:
-            return anime_data
-
+    async def _fetch_jikan(self, mal_id: Optional[int]) -> Optional[Dict]:
+        if not mal_id:
+            return None
         try:
-            enhanced_data = await tmdb_service.enhance_anime_metadata(anime_data, config)
-            return enhanced_data
+            from astream.services.jikan.client import jikan_client
+            return await jikan_client.get_anime_by_id(mal_id)
         except Exception as e:
-            anime_slug = anime_data.get('slug', 'unknown')
-            logger.error(f"Erreur enrichissement TMDB {context} pour {anime_slug}: {e}")
-            return anime_data
+            logger.warning(f"META Jikan {mal_id}: {e}")
+            return None
 
-    async def _build_episodes_mapping(self, seasons: list, anime_slug: str, animesama_player: "AnimeSamaPlayer") -> dict:
-        detection_tasks = [self._detect_episodes_for_season(season, anime_slug, animesama_player) for season in seasons]
-        episodes_results = await asyncio.gather(*detection_tasks)
-        return dict(episodes_results)
-
-    async def _create_tmdb_episodes_mapping(self, config, enhanced_anime_data: dict, tmdb_service,
-                                            tmdb_episodes_map: dict, seasons: list, episodes_map: dict) -> dict:
-        """
-        Crée un mapping intelligent entre les épisodes TMDB et Anime-Sama.
-
-        Args:
-            config: Configuration utilisateur
-            enhanced_anime_data: Données enrichies de l'anime
-            tmdb_service: Service TMDB
-            tmdb_episodes_map: Map des épisodes TMDB
-            seasons: Liste des saisons
-            episodes_map: Map des épisodes détectés
-
-        Returns:
-            Mapping intelligent des épisodes
-        """
-        if not (config.tmdbEnabled and config.tmdbEpisodeMapping and tmdb_episodes_map):
-            return {}
-
+    async def _fetch_tmdb(self, as_data: Dict, config) -> Optional[Dict]:
         try:
-            from astream.scrapers.animesama.tmdb_episode_mapper import create_intelligent_episode_mapping
-            intelligent_tmdb_map = create_intelligent_episode_mapping(tmdb_episodes_map, seasons, episodes_map)
-            return intelligent_tmdb_map
+            return await self.tmdb_service.enhance_anime_metadata(as_data, config)
         except Exception as e:
-            logger.error(f"Erreur création mapping intelligent: {e}")
-            return {}
+            logger.warning(f"META TMDB: {e}")
+            return None
 
-    async def _build_videos_list(self, seasons: list, episodes_map: dict, intelligent_tmdb_map: dict,
-                                 enhanced_anime_data: dict, anime_slug: str, animesama_api: "AnimeSamaAPI", config) -> list:
+    async def _get_anime_details(self, anime_slug: str) -> Optional[Dict]:
+        try:
+            return await get_or_fetch_anime_details(self.animesama_api.details, anime_slug)
+        except Exception as e:
+            logger.error(f"META AS details {anime_slug}: {e}")
+            return None
+
+    # ===========================
+    # Fusion des métadonnées
+    # ===========================
+    async def _merge_metadata(
+        self,
+        anime_slug: str,
+        as_data: Dict,
+        cinemeta_meta: Optional[Dict],
+        jikan_data: Optional[Dict],
+        tmdb_data: Optional[Dict],
+        xref: Dict,
+        config,
+    ) -> Dict:
         """
-        Construit la liste complète des vidéos pour toutes les saisons.
-
-        Args:
-            seasons: Liste des saisons
-            episodes_map: Map des épisodes par saison
-            intelligent_tmdb_map: Mapping TMDB intelligent
-            enhanced_anime_data: Données enrichies de l'anime
-            anime_slug: Slug de l'anime
-            animesama_api: API Anime-Sama
-            config: Configuration utilisateur
-
-        Returns:
-            Liste des objets vidéo Stremio
+        Fusionne les données de toutes les sources.
+        Priorité : Cinemeta > TMDB > Jikan > Anime-Sama
         """
+        merged: Dict[str, Any] = {}
+
+        # --- Titre ---
+        merged["title"] = (
+            (cinemeta_meta or {}).get("name")
+            or (tmdb_data or {}).get("title")
+            or (jikan_data or {}).get("title_english")
+            or as_data.get("title", "")
+        )
+
+        # --- Poster (Jikan > TMDB > Cinemeta — Jikan a les meilleurs posters anime) ---
+        jikan_poster = None
+        if jikan_data:
+            imgs = jikan_data.get("images", {})
+            jikan_poster = (
+                imgs.get("webp", {}).get("large_image_url")
+                or imgs.get("jpg", {}).get("large_image_url")
+            )
+
+        merged["poster"] = (
+            jikan_poster
+            or (tmdb_data or {}).get("poster")
+            or (cinemeta_meta or {}).get("poster")
+            or as_data.get("image")
+        )
+
+        # --- Background (TMDB > Cinemeta) ---
+        merged["background"] = (
+            (tmdb_data or {}).get("background")
+            or (cinemeta_meta or {}).get("background")
+        )
+
+        # --- Logo (TMDB uniquement) ---
+        merged["logo"] = (tmdb_data or {}).get("logo")
+
+        # --- Description (TMDB FR > Cinemeta EN > Jikan EN > AS) ---
+        tmdb_desc = (tmdb_data or {}).get("description") or (tmdb_data or {}).get("synopsis")
+        cinemeta_desc = (cinemeta_meta or {}).get("description")
+        jikan_desc = (jikan_data or {}).get("synopsis", "")
+        if jikan_desc and jikan_desc.endswith("(Source: MAL Rewrite)"):
+            jikan_desc = jikan_desc[:-21].strip()
+
+        merged["description"] = (
+            tmdb_desc
+            or cinemeta_desc
+            or jikan_desc
+            or as_data.get("synopsis", "")
+        )
+
+        # --- Release info ---
+        release_info = None
+        if cinemeta_meta and cinemeta_meta.get("releaseInfo"):
+            release_info = str(cinemeta_meta["releaseInfo"])
+        elif tmdb_data and tmdb_data.get("year"):
+            release_info = str(tmdb_data["year"])
+        elif jikan_data and jikan_data.get("aired", {}).get("from"):
+            release_info = jikan_data["aired"]["from"][:4]
+        merged["release_info"] = release_info
+
+        # --- Runtime ---
+        runtime = (cinemeta_meta or {}).get("runtime") or (tmdb_data or {}).get("runtime")
+        if not runtime and jikan_data:
+            dur = jikan_data.get("duration", "")
+            import re as _re
+            m = _re.search(r"(\d+)\s*min", dur)
+            if m:
+                runtime = f"{m.group(1)} min"
+        merged["runtime"] = runtime
+
+        # --- Note IMDb ---
+        imdb_rating = None
+        if cinemeta_meta and cinemeta_meta.get("imdbRating"):
+            imdb_rating = str(cinemeta_meta["imdbRating"])
+        elif jikan_data and jikan_data.get("score"):
+            imdb_rating = str(round(jikan_data["score"], 1))
+        merged["imdb_rating"] = imdb_rating
+
+        # --- Genres (Jikan > Cinemeta > AS — Jikan a les genres anime précis) ---
+        genres: List[str] = []
+        if jikan_data:
+            for key in ("genres", "demographics", "themes"):
+                for g in jikan_data.get(key, []):
+                    name = g.get("name", "")
+                    if name and name not in genres:
+                        genres.append(name)
+        if not genres and cinemeta_meta:
+            genres = cinemeta_meta.get("genres", [])
+        if not genres:
+            genres_raw = as_data.get("genres", [])
+            genres = parse_genres_string(genres_raw) if isinstance(genres_raw, str) else genres_raw
+
+        merged["genres"] = genres
+
+        # --- Cast & Director (Cinemeta) ---
+        merged["cast"] = (cinemeta_meta or {}).get("cast", [])
+        merged["director"] = (cinemeta_meta or {}).get("director", [])
+
+        # --- Trailer (TMDB) ---
+        trailers = (tmdb_data or {}).get("trailers", [])
+        merged["trailers"] = trailers
+
+        return merged
+
+    # ===========================
+    # Construction de la liste d'épisodes
+    # ===========================
+    async def _build_videos(
+        self,
+        anime_slug: str,
+        as_data: Dict,
+        cinemeta_meta: Optional[Dict],
+        tmdb_data: Optional[Dict],
+        config,
+        xref: Optional[Dict] = None,
+    ) -> List[Dict]:
+        """
+        Construit la liste de vidéos Stremio.
+
+        Gestion du split-cour (ex. Re:Zero S2 Part 1 + Part 2 = Cinemeta S2) :
+          - Utilise anime_db.build_season_concordance() pour mapper
+            les saisons AS aux saisons Cinemeta avec le bon offset épisodique.
+          - Cinemeta fournit les métadonnées de chaque épisode (titre, date, thumbnail).
+          - Anime-Sama détermine quels épisodes ont des streams disponibles.
+        """
+        from astream.config.settings import SEASON_TYPE_FILM, SEASON_TYPE_OVA, SPECIAL_SEASON_THRESHOLD
+        from astream.utils.anime_db import build_season_concordance
+
+        seasons = as_data.get("seasons", [])
+        if not seasons:
+            return []
+
+        # Détecter les épisodes disponibles sur Anime-Sama
+        episodes_map = await self._detect_available_episodes(seasons, anime_slug)
+
+        # Récupérer les vidéos Cinemeta indexées par (saison, épisode)
+        cinemeta_videos = (cinemeta_meta or {}).get("videos", [])
+        cinemeta_index: Dict[str, Dict] = {}
+        for v in cinemeta_videos:
+            s = v.get("season")
+            e = v.get("episode")
+            if s is not None and e is not None:
+                cinemeta_index[f"s{s}e{e}"] = v
+
+        # Construire la table de concordance saisonnière via anime_db
+        # (gère le split-cour : AS S3 Part 2 → Cinemeta S2 avec offset)
+        mal_id = (xref or {}).get("mal_id")
+        normal_seasons = {
+            s.get("season_number"): episodes_map.get(s.get("season_number"), 0)
+            for s in seasons
+            if s.get("season_number", 0) < SPECIAL_SEASON_THRESHOLD
+            and s.get("season_number", 0) > 0
+        }
+
+        concordance: Dict[int, Dict] = {}
+        if mal_id and normal_seasons:
+            try:
+                concordance = build_season_concordance(mal_id, normal_seasons)
+            except Exception as e:
+                logger.warning(f"Concordance saisonnière {anime_slug}: {e}")
+
+        # Image par défaut
+        default_thumb = (tmdb_data or {}).get("poster") or as_data.get("image")
+
         videos = []
-        tmdb_enriched_count = 0
-
-        final_tmdb_map = intelligent_tmdb_map if intelligent_tmdb_map else {}
-        if final_tmdb_map:
-            logger.log("TMDB", f"Utilisation mapping intelligent: {len(final_tmdb_map)} correspondances")
-        else:
-            logger.log("TMDB", "Aucun mapping épisodes utilisé (désactivé ou sécurité)")
-
         for season in seasons:
-            season_number = season.get('season_number')
-            season_name = season.get('name')
-            max_episodes = episodes_map.get(season_number, 0)
-
-            # Ignorer les saisons sans épisodes détectés (pas de valeurs hardcodées)
+            season_number = season.get("season_number")
+            max_episodes  = episodes_map.get(season_number, 0)
             if max_episodes == 0:
                 continue
 
-            for episode_num in range(1, max_episodes + 1):
-                episode_title, episode_overview = await self._get_episode_title_and_overview(
-                    season_number, episode_num, anime_slug, enhanced_anime_data, season_name, animesama_api
-                )
+            # === Saisons spéciales (films, OVA) — pas de concordance ===
+            if season_number == SEASON_TYPE_FILM or season_number >= SPECIAL_SEASON_THRESHOLD:
+                for ep_num in range(1, max_episodes + 1):
+                    if season_number == SEASON_TYPE_FILM:
+                        try:
+                            title = await self.animesama_api.get_film_title(anime_slug, ep_num)
+                            ep_title = title or f"Film {ep_num}"
+                        except Exception:
+                            ep_title = f"Film {ep_num}"
+                    else:
+                        ep_title = f"Épisode spécial {ep_num}"
 
-                video = {
-                    "id": f"as:{anime_slug}:s{season_number}e{episode_num}",
-                    "title": episode_title,
-                    "season": season_number,
-                    "episode": episode_num,
-                    "thumbnail": enhanced_anime_data.get('image'),
-                    "overview": episode_overview
+                    videos.append({
+                        "id": f"as:{anime_slug}:s{season_number}e{ep_num}",
+                        "title": ep_title,
+                        "season": 0,  # Stremio affiche les spéciaux en S0
+                        "episode": ep_num,
+                        "thumbnail": default_thumb,
+                        "overview": "",
+                    })
+                continue
+
+            # === Saisons normales — avec concordance split-cour ===
+            conf = concordance.get(season_number, {
+                "cinemeta_season": season_number,
+                "cinemeta_ep_offset": 0,
+            })
+            cinemeta_s      = conf.get("cinemeta_season", season_number)
+            ep_offset       = conf.get("cinemeta_ep_offset", 0)
+            is_split        = conf.get("is_split_cour", False)
+
+            for ep_num in range(1, max_episodes + 1):
+                # Calculer l'épisode correspondant dans Cinemeta
+                cinemeta_ep_num = ep_offset + ep_num
+                cinemeta_key    = f"s{cinemeta_s}e{cinemeta_ep_num}"
+                cinemeta_ep     = cinemeta_index.get(cinemeta_key, {})
+
+                ep_title = cinemeta_ep.get("title") or f"Épisode {ep_num}"
+
+                thumbnail = cinemeta_ep.get("thumbnail") or default_thumb
+
+                video: Dict[str, Any] = {
+                    "id": f"as:{anime_slug}:s{season_number}e{ep_num}",
+                    "title": ep_title,
+                    "season": cinemeta_s,     # Numéro de saison Cinemeta (cohérent avec l'affichage)
+                    "episode": cinemeta_ep_num,  # Épisode Cinemeta (avec offset split-cour)
+                    "thumbnail": thumbnail,
+                    "overview": cinemeta_ep.get("overview", ""),
+                    "_as_season": season_number,  # Gardé pour résolution des streams
+                    "_as_episode": ep_num,
                 }
 
-                if self._apply_tmdb_episode_metadata(video, final_tmdb_map, config, season_number, episode_num):
-                    tmdb_enriched_count += 1
+                if cinemeta_ep.get("released"):
+                    video["released"] = cinemeta_ep["released"]
 
                 videos.append(video)
 
-        if tmdb_enriched_count > 0:
-            logger.log("TMDB", f"Enrichissement épisodes: {tmdb_enriched_count}/{len(videos)} épisodes enrichis")
-
-        logger.log("API", f"Métadonnées construites: {len(seasons)} saisons, {len(videos)} épisodes total")
-
+        logger.log(
+            "API",
+            f"Vidéos {anime_slug}: {len(videos)} épisodes "
+            f"(Cinemeta={len(cinemeta_index)}, concordance={len(concordance)} saisons)"
+        )
         return videos
 
-    # ===========================
-    # Méthodes privées pour métadonnées
-    # ===========================
-    async def _detect_episodes_for_season(self, season: dict, anime_slug: str, animesama_player: "AnimeSamaPlayer") -> tuple:
-        season_number = season.get('season_number')
-        try:
-            episode_counts_dict = await animesama_player.get_available_episodes_count(anime_slug, season)
-            available_episodes = max(episode_counts_dict.values()) if episode_counts_dict and episode_counts_dict.values() else 0
+    async def _detect_available_episodes(self, seasons: list, anime_slug: str) -> Dict[int, int]:
+        """Détecte le nombre d'épisodes disponibles sur Anime-Sama par saison."""
+        tasks = [
+            self._detect_season_episodes(season, anime_slug)
+            for season in seasons
+        ]
+        results = await asyncio.gather(*tasks)
+        return dict(results)
 
-            if available_episodes > 0:
-                return season_number, available_episodes
-            else:
-                logger.debug(f"Aucun épisode détecté pour {anime_slug} S{season_number} - retour 0")
-                return season_number, 0
+    async def _detect_season_episodes(self, season: dict, anime_slug: str) -> tuple:
+        season_number = season.get("season_number")
+        try:
+            counts = await animesama_player.get_available_episodes_count(anime_slug, season)
+            available = max(counts.values()) if counts else 0
+            return season_number, available
         except Exception as e:
-            logger.warning(f"Impossible de détecter le nombre d'épisodes pour {anime_slug} S{season_number}: {e}")
+            logger.warning(f"Détection épisodes {anime_slug} S{season_number}: {e}")
             return season_number, 0
 
-    async def _get_episode_title_and_overview(self, season_number: int, episode_num: int, anime_slug: str,
-                                              enhanced_anime_data: dict, season_name: str, animesama_api: "AnimeSamaAPI") -> tuple:
-        if season_number == SEASON_TYPE_FILM:
-            logger.log("API", f"FILM DETECTE - anime: {anime_slug}, saison: {season_number}, episode: {episode_num}")
-            try:
-                film_title = await animesama_api.get_film_title(anime_slug, episode_num)
-                if film_title:
-                    episode_title = film_title
-                    episode_overview = enhanced_anime_data.get('synopsis', film_title)
-                    logger.log("API", f"FILM - Titre final utilisé: '{episode_title}'")
-                else:
-                    episode_title = f"Film {episode_num}"
-                    episode_overview = enhanced_anime_data.get('synopsis', f"Film {episode_num}")
-                    logger.warning(f"FILM - Titre par défaut utilisé: '{episode_title}'")
-            except Exception as e:
-                logger.error(f"FILM - Erreur récupération titre {anime_slug} #{episode_num}: {e}")
-                episode_title = f"Film {episode_num}"
-                episode_overview = enhanced_anime_data.get('synopsis', f"Film {episode_num}")
-        else:  # Épisodes normaux
-            episode_title = f"Episode {episode_num}"
-            episode_overview = enhanced_anime_data.get('synopsis', f"Episode {episode_num} de {season_name}")
-
-        return episode_title, episode_overview
-
-    def _apply_tmdb_episode_metadata(self, video: dict, final_tmdb_map: dict, config,
-                                     season_number: int, episode_num: int) -> bool:
-        episode_key = f"s{season_number}e{episode_num}"
-
-        if episode_key in final_tmdb_map:
-            tmdb_episode = final_tmdb_map[episode_key]
-
-            if config.tmdbEpisodeMapping and season_number > 0:
-                enriched = False
-                if tmdb_episode.get("still_path"):
-                    temp_client = TMDBClient(None)
-                    video['thumbnail'] = temp_client.get_episode_image_url(tmdb_episode["still_path"])
-                    enriched = True
-
-                if tmdb_episode.get("air_date"):
-                    video['released'] = f"{tmdb_episode['air_date']}T00:00:00.000Z"
-                    enriched = True
-
-                if tmdb_episode.get("name"):
-                    video['title'] = tmdb_episode["name"]
-                    enriched = True
-
-                if tmdb_episode.get("overview") and len(tmdb_episode["overview"].strip()) > 10:
-                    video['overview'] = tmdb_episode["overview"]
-                    enriched = True
-
-                return enriched
-
-        return False
-
-
     # ===========================
-    # Chemin Jikan : méta sans Anime-Sama (si slug non résolvable)
+    # Chemin Jikan (jikan:MAL_ID)
     # ===========================
-    async def _get_jikan_meta(self, anime_id: str, config, request, b64config: str) -> Dict[str, Any]:
+    async def _get_meta_from_jikan_id(self, anime_id: str, config, request, b64config: str) -> Dict:
         """
-        Construit les métadonnées pour un anime Jikan.
-        1. Essaie de résoudre vers un slug Anime-Sama → méta complète avec épisodes
-        2. Fallback : méta partielle depuis Jikan + enrichissement TMDB
+        Gère les IDs jikan:MAL_ID.
+        Essaie d'abord de résoudre vers un slug AS, sinon méta partielle.
         """
-        from astream.services.jikan.service import jikan_service
-        from astream.scrapers.animesama.client import animesama_api as _api
-
-        # Étape 1 : tentative de résolution vers Anime-Sama
-        resolved_slug = await resolve_external_id_to_slug(anime_id, global_http_client, _api)
-
-        if resolved_slug:
-            logger.log("ID_RESOLVER", f"META Jikan: {anime_id} → slug AS: {resolved_slug}")
-            anime_data = await self._get_anime_details(resolved_slug)
-            if anime_data:
-                enhanced = await self._apply_tmdb_enhancement(anime_data, config, self.tmdb_service, "métadonnées")
-                tmdb_episodes_map = {}
-                if config.tmdbEnabled and (config.tmdbApiKey or settings.TMDB_API_KEY):
-                    try:
-                        tmdb_episodes_map = await self.tmdb_service.get_episodes_mapping(enhanced, config)
-                    except Exception:
-                        pass
-                seasons = enhanced.get("seasons", [])
-                episodes_map = await self._build_episodes_mapping(seasons, resolved_slug, animesama_player)
-                intelligent_tmdb_map = await self._create_tmdb_episodes_mapping(
-                    config, enhanced, self.tmdb_service, tmdb_episodes_map, seasons, episodes_map
-                )
-                videos = await self._build_videos_list(
-                    seasons, episodes_map, intelligent_tmdb_map, enhanced,
-                    resolved_slug, self.animesama_api, config
-                )
-                meta = StremioMetaBuilder.build_detail_meta(enhanced, videos, config)
-                # Garder l'ID Jikan original pour cohérence
-                meta["id"] = anime_id
-                genres = enhanced.get("genres", [])
-                if isinstance(genres, str):
-                    genres = parse_genres_string(genres)
-                meta["genres"] = genres
-                meta["links"] = (
-                    StremioLinkBuilder.build_genre_links(request, b64config, genres)
-                    + StremioLinkBuilder.build_imdb_link(enhanced)
-                )
-                return meta
-
-        # Étape 2 : fallback — méta partielle depuis Jikan + TMDB
-        logger.log("JIKAN", f"META fallback Jikan pour {anime_id} (pas de slug AS trouvé)")
-        import re as _re
-        mal_match = _re.match(r"^jikan:(\d+)$", anime_id)
-        if not mal_match:
+        m = re.match(r"^jikan:(\d+)$", anime_id)
+        if not m:
             return {}
 
-        mal_id = int(mal_match.group(1))
+        mal_id = int(m.group(1))
+
+        # Chercher si on a déjà un slug AS mappé
+        from astream.utils.cross_ref import get_xref_by_mal
+        xref = await get_xref_by_mal(mal_id)
+        if xref and xref.get("as_slug"):
+            return await self._build_meta_for_slug(xref["as_slug"], config, request, b64config)
+
+        # Essayer de résoudre via le titre Jikan → AS search
+        resolved_slug = await resolve_external_id_to_slug(anime_id, global_http_client, self.animesama_api)
+        if resolved_slug:
+            return await self._build_meta_for_slug(resolved_slug, config, request, b64config)
+
+        # Fallback : méta partielle depuis Jikan + TMDB
+        logger.log("JIKAN", f"META fallback pour jikan:{mal_id}")
+        from astream.services.jikan.service import jikan_service
         jikan_data = await jikan_service.get_anime(mal_id)
         if not jikan_data:
             return {}
 
-        enhanced = await self._apply_tmdb_enhancement(jikan_data, config, self.tmdb_service, "métadonnées Jikan")
-        genres = enhanced.get("genres", [])
-        meta = StremioMetaBuilder.build_detail_meta(enhanced, [], config)
-        meta["id"] = anime_id
-        meta["genres"] = genres if isinstance(genres, list) else []
-        meta["links"] = (
-            StremioLinkBuilder.build_genre_links(request, b64config, meta["genres"])
-            + StremioLinkBuilder.build_imdb_link(enhanced)
+        as_data = {"title": jikan_data.get("title", ""), "genres": jikan_data.get("genres", []), "seasons": []}
+        tmdb_data = await self._fetch_tmdb(as_data, config)
+
+        imgs = jikan_data.get("_raw", {}).get("images", {}) if jikan_data.get("_raw") else {}
+        poster = (
+            imgs.get("webp", {}).get("large_image_url")
+            or imgs.get("jpg", {}).get("large_image_url")
+            or (tmdb_data or {}).get("poster")
         )
-        # Informations supplémentaires Jikan
-        if enhanced.get("mal_score"):
-            meta.setdefault("description", "")
-            meta["description"] = (meta.get("description", "") or "").strip()
-        return meta
+        genres = jikan_data.get("genres", [])
+        if isinstance(genres, list) and genres and isinstance(genres[0], dict):
+            genres = [g.get("name", "") for g in genres]
+
+        return {
+            "id": anime_id,
+            "type": "movie" if jikan_data.get("_is_movie") else "series",
+            "name": jikan_data.get("title", ""),
+            "poster": poster,
+            "background": (tmdb_data or {}).get("background"),
+            "description": jikan_data.get("description", ""),
+            "releaseInfo": jikan_data.get("year", ""),
+            "runtime": jikan_data.get("runtime", ""),
+            "imdbRating": str(jikan_data.get("mal_score", "")) if jikan_data.get("mal_score") else None,
+            "genres": genres,
+            "links": StremioLinkBuilder.build_genre_links(request, b64config, genres),
+            "behaviorHints": {"hasScheduledVideos": False},
+        }
+
+    # ===========================
+    # Helpers
+    # ===========================
+    @staticmethod
+    def _build_imdb_link(imdb_id: Optional[str], rating: Optional[str]) -> List[Dict]:
+        if not imdb_id:
+            return []
+        return [{
+            "name": rating or "IMDb",
+            "category": "imdb",
+            "url": f"https://imdb.com/title/{imdb_id}",
+        }]
 
 
 # ===========================
 # Instance Singleton Globale
 # ===========================
 metadata_service = MetadataService()
-            

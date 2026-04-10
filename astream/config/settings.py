@@ -128,7 +128,7 @@ def get_base_manifest() -> Dict[str, Any]:
         "version": "2.1.4",
                 "catalogs": [
             {
-                "type": "anime",
+                "type": "series",
                 "id": "animesama_catalog",
                 "name": "🔍 Recherche Anime",
                 "extra": [
@@ -137,151 +137,151 @@ def get_base_manifest() -> Dict[str, Any]:
                 ]
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_sorties_du_jour",
                 "name": "📅 Sorties du jour",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_simulcasts",
                 "name": "📡 Simulcasts en cours",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_saison",
                 "name": "🌸 Saison en cours",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_top",
                 "name": "🏆 Top Anime",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "movie",
                 "id": "jikan_films",
                 "name": "🎬 Films d\'anime",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_prochaine_saison",
                 "name": "🔮 Prochaine saison",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_action",
                 "name": "⚔️ Action",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_adventure",
                 "name": "🗺️ Aventure",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_comedy",
                 "name": "😂 Comédie",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_drama",
                 "name": "🎭 Drame",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_fantasy",
                 "name": "✨ Fantasy",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_romance",
                 "name": "💕 Romance",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_sci_fi",
                 "name": "🚀 Sci-Fi",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_slice_of_life",
                 "name": "☀️ Slice of Life",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_supernatural",
                 "name": "👻 Surnaturel",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_sports",
                 "name": "⚽ Sports",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_horror",
                 "name": "😱 Horreur",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_psychological",
                 "name": "🧠 Psychologique",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_shounen",
                 "name": "🔥 Shounen",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_isekai",
                 "name": "🌀 Isekai",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_mecha",
                 "name": "🤖 Mecha",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "jikan_genre_historical",
                 "name": "⛩️ Historique",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "animesama_en_cours",
                 "name": "Anime-Sama — En cours",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "animesama_nouveautes",
                 "name": "Anime-Sama — Nouveautés",
                 "extra": []
             },
             {
-                "type": "anime",
+                "type": "series",
                 "id": "animesama_sorties_du_jour",
                 "name": "Anime-Sama — Sorties du jour",
                 "extra": []
@@ -289,8 +289,16 @@ def get_base_manifest() -> Dict[str, Any]:
         ],
         "resources": [
             "catalog",
-            {"name": "meta", "types": ["anime", "movie", "series"], "idPrefixes": ["as", "jikan"]},
-            {"name": "stream", "types": ["movie", "series", "anime"], "idPrefixes": ["tt", "kitsu", "as", "jikan"]}
+            {
+                "name": "meta",
+                "types": ["anime"],
+                "idPrefixes": ["as", "jikan"]
+            },
+            {
+                "name": "stream",
+                "types": ["series", "movie", "anime"],
+                "idPrefixes": ["tt", "kitsu", "as", "jikan", "tmdb"]
+            }
         ],
         "types": ["movie", "series", "anime"],
         "logo": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg",

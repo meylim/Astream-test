@@ -1,152 +1,196 @@
 """
 Traducteur d'IDs externes → slug Anime-Sama.
 
-Flux :
-  1. ID IMDb (tt...) ou Kitsu (kitsu...)
-  2. Appel API Kitsu pour récupérer le titre japonais + anglais
-  3. Recherche du titre sur Anime-Sama
-  4. Retourne le slug du premier résultat correspondant
+Flux supportés :
+  tmdb:XXXXX      → TMDB API → titre → recherche Anime-Sama
+  jikan:XXXXX     → Jikan API → titre → recherche Anime-Sama
+  kitsu:XXXXX     → Kitsu API → titre → recherche Anime-Sama
+  tt...           → OMDb API  → titre → recherche Anime-Sama
+
+Le cache de résolution est maintenu 24h (les mappings sont stables).
 """
 
-from typing import Optional, Dict, Any, List
 import re
+from typing import Optional, Dict, Any, List
 
 from astream.utils.logger import logger
 from astream.utils.cache import CacheManager
 
 
 # ===========================
-# Constantes
+# Constantes API
 # ===========================
-KITSU_API_BASE = "https://kitsu.app/api/edge"
-KITSU_ANILIST_BASE = "https://graphql.anilist.co"
-JIKAN_API_BASE = "https://api.jikan.moe/v4"
+JIKAN_API_BASE  = "https://api.jikan.moe/v4"
+KITSU_API_BASE  = "https://kitsu.app/api/edge"
+TMDB_API_BASE   = "https://api.themoviedb.org/3"
+
+
+# ===========================
+# Résolution TMDB ID → titres
+# ===========================
+async def _resolve_tmdb_id(tmdb_id: str, http_client) -> Optional[Dict[str, str]]:
+    """
+    Interroge l'API TMDB pour récupérer les titres d'un anime via son ID numérique.
+    Essaie d'abord en tant que série TV, puis film.
+    """
+    from astream.config.settings import settings
+    api_key = settings.TMDB_API_KEY
+    if not api_key:
+        logger.warning(f"ID_RESOLVER: Pas de TMDB_API_KEY pour résoudre tmdb:{tmdb_id}")
+        return None
+
+    for media_type in ("tv", "movie"):
+        try:
+            url = f"{TMDB_API_BASE}/{media_type}/{tmdb_id}"
+            response = await http_client.get(url, params={
+                "api_key": api_key,
+                "language": "en-US",
+                "append_to_response": "alternative_titles"
+            })
+            if response.status_code == 404:
+                continue
+            response.raise_for_status()
+            data = response.json()
+
+            # Collecter tous les titres disponibles
+            titles = set()
+            for key in ("name", "title", "original_name", "original_title"):
+                val = data.get(key, "")
+                if val:
+                    titles.add(val.strip())
+
+            # Titres alternatifs (EN, FR, romaji)
+            alt = data.get("alternative_titles", {})
+            for entry in alt.get("results", alt.get("titles", [])):
+                t = (entry.get("title") or "").strip()
+                lang = entry.get("iso_3166_1", "")
+                if t and lang in ("US", "GB", "FR", "JP", ""):
+                    titles.add(t)
+
+            if not titles:
+                continue
+
+            titles_list = list(titles)
+            # Préférer titre anglais comme canonique
+            canonical = data.get("name") or data.get("title") or titles_list[0]
+
+            logger.log("ID_RESOLVER", f"TMDB {tmdb_id} ({media_type}): {len(titles_list)} titres trouvés")
+            return {
+                "canonical": canonical,
+                "en": data.get("name") or data.get("title") or "",
+                "original": data.get("original_name") or data.get("original_title") or "",
+                "all_titles": titles_list,
+            }
+        except Exception as e:
+            logger.warning(f"ID_RESOLVER: Erreur TMDB {media_type}/{tmdb_id}: {e}")
+
+    return None
 
 
 # ===========================
 # Résolution Jikan MAL ID → titres
 # ===========================
 async def _resolve_jikan_mal_id(mal_id: str, http_client) -> Optional[Dict[str, str]]:
-    """
-    Interroge l'API Jikan pour récupérer les titres d'un anime via son MAL ID.
-    Retourne un dict avec les clés 'en', 'ja', 'canonical'.
-    """
     try:
         url = f"{JIKAN_API_BASE}/anime/{mal_id}"
         response = await http_client.get(url)
         response.raise_for_status()
         data = response.json()
         anime = data.get("data", {})
-
         return {
-            "en": anime.get("title_english") or "",
-            "ja": anime.get("title") or "",  # Généralement en Romaji
             "canonical": anime.get("title_english") or anime.get("title") or "",
+            "en": anime.get("title_english") or "",
+            "original": anime.get("title") or "",
+            "all_titles": [
+                anime.get("title_english") or "",
+                anime.get("title") or "",
+            ],
         }
     except Exception as e:
-        logger.warning(f"ID_RESOLVER: Erreur Jikan pour MAL {mal_id}: {e}")
+        logger.warning(f"ID_RESOLVER: Erreur Jikan MAL {mal_id}: {e}")
         return None
 
 
 # ===========================
-# Résolution Kitsu ID → titre
+# Résolution Kitsu ID → titres
 # ===========================
 async def _resolve_kitsu_id(kitsu_id: str, http_client) -> Optional[Dict[str, str]]:
-    """
-    Interroge l'API Kitsu pour récupérer les titres d'un anime via son ID Kitsu.
-    Retourne un dict avec les clés 'en', 'ja', 'canonical'.
-    """
     try:
         url = f"{KITSU_API_BASE}/anime/{kitsu_id}"
         response = await http_client.get(url, headers={"Accept": "application/vnd.api+json"})
         response.raise_for_status()
         data = response.json()
-
         attrs = data.get("data", {}).get("attributes", {})
         titles = attrs.get("titles", {})
-
+        canonical = attrs.get("canonicalTitle", "")
         return {
+            "canonical": canonical or titles.get("en_jp") or "",
             "en": titles.get("en") or titles.get("en_jp") or "",
-            "ja": titles.get("ja_jp") or "",
-            "canonical": attrs.get("canonicalTitle") or "",
+            "original": titles.get("ja_jp") or "",
+            "all_titles": [v for v in titles.values() if v],
         }
     except Exception as e:
-        logger.warning(f"ID_RESOLVER: Erreur API Kitsu pour {kitsu_id}: {e}")
+        logger.warning(f"ID_RESOLVER: Erreur Kitsu {kitsu_id}: {e}")
         return None
 
 
 # ===========================
-# Résolution IMDb ID → titre via Kitsu
+# Résolution IMDb ID → titres (via OMDb)
 # ===========================
 async def _resolve_imdb_id(imdb_id: str, http_client) -> Optional[Dict[str, str]]:
-    """
-    Cherche un anime sur Kitsu en utilisant l'ID IMDb comme référence croisée.
-    Kitsu ne supporte pas la recherche directe par IMDb ID, donc on passe par
-    l'API AniList qui a cette correspondance, puis on récupère le titre.
-    """
     try:
-        # AniList GraphQL supporte la recherche par idMal/imdbId
-        query = """
-        query ($search: String) {
-            Media(type: ANIME, search: $search) {
-                title { romaji english native }
-                idMal
-            }
-        }
-        """
-        # Stratégie : on ne peut pas résoudre un tt... directement sans mapping.
-        # On utilise l'API Open Movie Database (OMDb) gratuite pour récupérer le titre,
-        # puis on cherche ce titre sur Anime-Sama.
-        omdb_url = f"https://www.omdbapi.com/?i={imdb_id}&apikey=trilogy"
-        response = await http_client.get(omdb_url)
-
+        response = await http_client.get(
+            "https://www.omdbapi.com/",
+            params={"i": imdb_id, "apikey": "trilogy"}
+        )
         if response.status_code == 200:
             data = response.json()
             if data.get("Response") == "True":
+                title = data.get("Title", "")
                 return {
-                    "en": data.get("Title", ""),
-                    "ja": "",
-                    "canonical": data.get("Title", ""),
+                    "canonical": title,
+                    "en": title,
+                    "original": "",
+                    "all_titles": [title],
                 }
-
-        # Fallback: essayer directement l'API Kitsu avec l'ID imdb comme mappingId
-        # Certains clients utilisent kitsu:{id} pour les IDs Kitsu natifs
-        return None
-
     except Exception as e:
-        logger.warning(f"ID_RESOLVER: Erreur résolution IMDb {imdb_id}: {e}")
-        return None
+        logger.warning(f"ID_RESOLVER: Erreur IMDb {imdb_id}: {e}")
+    return None
 
 
 # ===========================
-# Recherche sur Anime-Sama
+# Recherche du slug sur Anime-Sama
 # ===========================
-async def _find_slug_from_titles(titles: Dict[str, str], animesama_api) -> Optional[str]:
+async def _find_slug_from_titles(titles: Dict[str, Any], animesama_api) -> Optional[str]:
     """
-    Tente de trouver le slug Anime-Sama en cherchant avec les différents titres disponibles.
-    Essaie d'abord le titre canonique, puis l'anglais, puis le japonais romanisé.
+    Tente de trouver le slug Anime-Sama en cherchant avec les titres disponibles.
+    Essaie d'abord le titre canonical, ensuite tous les titres alternatifs.
     """
     candidates = []
     if titles.get("canonical"):
         candidates.append(titles["canonical"])
     if titles.get("en") and titles["en"] not in candidates:
         candidates.append(titles["en"])
-    if titles.get("ja") and titles["ja"] not in candidates:
-        candidates.append(titles["ja"])
+    if titles.get("original") and titles["original"] not in candidates:
+        candidates.append(titles["original"])
+    # Ajouter les titres alternatifs non encore essayés
+    for t in titles.get("all_titles", []):
+        if t and t not in candidates:
+            candidates.append(t)
 
     for title in candidates:
-        if not title:
+        if not title or len(title) < 2:
             continue
         try:
-            logger.log("ID_RESOLVER", f"Recherche Anime-Sama pour: '{title}'")
+            logger.log("ID_RESOLVER", f"Recherche AS pour: '{title}'")
             results = await animesama_api.search_anime(title)
             if results:
                 slug = results[0].get("slug") or results[0].get("id", "").replace("as:", "")
                 if slug:
-                    logger.log("ID_RESOLVER", f"Slug trouvé: '{slug}' pour titre '{title}'")
+                    logger.log("ID_RESOLVER", f"Slug trouvé: '{slug}' via '{title}'")
                     return slug
         except Exception as e:
-            logger.warning(f"ID_RESOLVER: Erreur recherche pour '{title}': {e}")
+            logger.warning(f"ID_RESOLVER: Erreur recherche '{title}': {e}")
 
     return None
 
@@ -160,20 +204,50 @@ async def resolve_external_id_to_slug(
     animesama_api,
 ) -> Optional[str]:
     """
-    Traduit un ID externe (tt.../kitsu:...) en slug Anime-Sama.
+    Traduit n'importe quel ID externe en slug Anime-Sama.
 
-    Args:
-        external_id: ID au format 'tt1234567' ou 'kitsu:12345' ou 'kitsu12345'
-        http_client: Client HTTP disponible
-        animesama_api: Instance de l'API Anime-Sama
-
-    Returns:
-        Le slug Anime-Sama correspondant, ou None si non trouvé.
+    Supporte :
+      tmdb:XXXXX   — ID TMDB numérique (Cinemeta / architecture Stateless UI)
+      jikan:XXXXX  — ID MAL via Jikan
+      kitsu:XXXXX  — ID Kitsu
+      kitsuXXXXX   — ID Kitsu sans séparateur
+      tt...        — ID IMDb
     """
     cache_key = f"as:id_resolve:{external_id}"
 
     async def do_resolve():
-        # --- Jikan ID (jikan:MAL_ID) ---
+        # --- Vérification cross_ref DB en premier (évite les appels API répétés) ---
+        try:
+            from astream.utils.cross_ref import get_xref_by_tmdb, get_xref_by_mal, get_xref_by_imdb
+            _xref = None
+
+            tmdb_chk = re.match(r'^tmdb:(\d+)$', external_id)
+            if tmdb_chk:
+                _xref = await get_xref_by_tmdb(int(tmdb_chk.group(1)))
+            elif re.match(r'^jikan:(\d+)$', external_id):
+                mal_id_chk = re.match(r'^jikan:(\d+)$', external_id).group(1)
+                _xref = await get_xref_by_mal(int(mal_id_chk))
+            elif re.match(r'^tt\d+$', external_id):
+                _xref = await get_xref_by_imdb(external_id)
+
+            if _xref and _xref.get("as_slug"):
+                logger.log("ID_RESOLVER", f"xref DB hit: {external_id} → {_xref['as_slug']}")
+                return {"slug": _xref["as_slug"]}
+        except Exception as _e:
+            logger.debug(f"ID_RESOLVER xref lookup: {_e}")
+
+        # --- TMDB ID (tmdb:12345) ---
+        tmdb_match = re.match(r'^tmdb:(\d+)$', external_id)
+        if tmdb_match:
+            tmdb_id = tmdb_match.group(1)
+            logger.log("ID_RESOLVER", f"Résolution TMDB ID: {tmdb_id}")
+            titles = await _resolve_tmdb_id(tmdb_id, http_client)
+            if not titles:
+                return None
+            slug = await _find_slug_from_titles(titles, animesama_api)
+            return {"slug": slug} if slug else None
+
+        # --- Jikan ID (jikan:12345) ---
         jikan_match = re.match(r'^jikan:(\d+)$', external_id)
         if jikan_match:
             mal_id = jikan_match.group(1)
@@ -211,7 +285,7 @@ async def resolve_external_id_to_slug(
             cache_key=cache_key,
             fetch_func=do_resolve,
             lock_key=f"lock:{cache_key}",
-            ttl=86400,  # Cache 24h — les mappings ne changent pas
+            ttl=86400,
         )
         return cached.get("slug") if cached else None
     except Exception as e:
@@ -231,14 +305,39 @@ def extract_episode_info_from_id(episode_id: str):
     """
     Extrait les infos d'épisode d'un ID Stremio externe.
     Stremio envoie les streams sous la forme: {id}:{season}:{episode}
-    Exemple: tt0388629:1:1  ou  kitsu:12:1:1
-    
+
+    Supporte :
+      tmdb:XXXXX:season:episode   (Cinemeta / Stateless UI)
+      jikan:XXXXX:season:episode
+      kitsu:XXXXX:season:episode
+      tt...:season:episode
+      as:slug:sSe E              (natif — géré par MediaIdParser, pas ici)
+
     Retourne (external_id, season, episode) ou None.
     """
-    # Format Stremio pour series: id:season:episode
     parts = episode_id.split(":")
 
-    # Cas jikan:12345:season:episode (4 parties)
+    # --- tmdb:XXXXX:season:episode (4 parties) ---
+    if parts[0] == "tmdb" and len(parts) == 4:
+        external_id = f"tmdb:{parts[1]}"
+        try:
+            return external_id, int(parts[2]), int(parts[3])
+        except ValueError:
+            return None
+
+    # --- tmdb:XXXXX:episode (3 parties — film ou saison implicite 1) ---
+    if parts[0] == "tmdb" and len(parts) == 3:
+        external_id = f"tmdb:{parts[1]}"
+        try:
+            return external_id, 1, int(parts[2])
+        except ValueError:
+            return None
+
+    # --- tmdb:XXXXX seul (film) ---
+    if re.match(r'^tmdb:\d+$', episode_id):
+        return episode_id, 1, 1
+
+    # --- jikan:XXXXX:season:episode (4 parties) ---
     if parts[0] == "jikan" and len(parts) == 4:
         external_id = f"jikan:{parts[1]}"
         try:
@@ -246,7 +345,7 @@ def extract_episode_info_from_id(episode_id: str):
         except ValueError:
             return None
 
-    # Cas jikan:12345:episode (3 parties — saison implicite = 1)
+    # --- jikan:XXXXX:episode (3 parties) ---
     if parts[0] == "jikan" and len(parts) == 3:
         external_id = f"jikan:{parts[1]}"
         try:
@@ -254,7 +353,11 @@ def extract_episode_info_from_id(episode_id: str):
         except ValueError:
             return None
 
-    # Cas kitsu:12345:season:episode (4 parties)
+    # --- jikan:XXXXX seul ---
+    if re.match(r'^jikan:\d+$', episode_id):
+        return episode_id, 1, 1
+
+    # --- kitsu:XXXXX:season:episode (4 parties) ---
     if parts[0] == "kitsu" and len(parts) == 4:
         external_id = f"kitsu:{parts[1]}"
         try:
@@ -262,7 +365,7 @@ def extract_episode_info_from_id(episode_id: str):
         except ValueError:
             return None
 
-    # Cas kitsu:12345:episode (3 parties — format réel Stremio, saison implicite = 1)
+    # --- kitsu:XXXXX:episode (3 parties) ---
     if parts[0] == "kitsu" and len(parts) == 3:
         external_id = f"kitsu:{parts[1]}"
         try:
@@ -270,25 +373,22 @@ def extract_episode_info_from_id(episode_id: str):
         except ValueError:
             return None
 
-    # Cas tt1234567:season:episode
+    # --- tt...:season:episode (3 parties) ---
     if re.match(r'^tt\d+$', parts[0]) and len(parts) == 3:
         try:
             return parts[0], int(parts[1]), int(parts[2])
         except ValueError:
             return None
 
-    # Cas kitsu12345:season:episode (sans séparateur deux-points)
+    # --- kitsuXXXXX:season:episode (sans séparateur) ---
     if re.match(r'^kitsu\d+$', parts[0]) and len(parts) == 3:
         try:
             return parts[0], int(parts[1]), int(parts[2])
         except ValueError:
             return None
 
-    # Cas movie : ID seul sans épisode (tt1234567 ou kitsu:12345 ou jikan:12345)
+    # --- Films (ID seul sans épisode) ---
     if re.match(r'^tt\d+$', episode_id) or re.match(r'^kitsu[:\-]?\d+$', episode_id):
-        return episode_id, 1, 1
-
-    if re.match(r'^jikan:\d+$', episode_id):
         return episode_id, 1, 1
 
     return None
