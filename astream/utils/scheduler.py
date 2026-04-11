@@ -2,12 +2,16 @@
 Scheduler de pré-chauffage et rafraîchissement automatique des caches.
 
 Stratégie :
-  AU DÉMARRAGE  → Anime-Sama (homepage + planning) + Adkami (catalogues JSON) + TMDB enrichissement
-  À 3H PARIS    → Reconstruction complète des catalogues Adkami + Anime-Sama + TMDB
+  AU DÉMARRAGE  → Anime-Sama (homepage + planning) + Jikan (tous catalogues) + TMDB enrichissement
+  À MINUIT PARIS → Invalide + recharge tous les caches Jikan + Anime-Sama + TMDB
   TOUTES LES ~1H → Anticipe expiration TTL homepage + planning Anime-Sama
 
-Adkami : les catalogues JSON sont construits une fois par jour à 3h Paris.
-Simulcast : rechargé EN DIRECT à chaque appel client (scraper.scan_simulcasts_cached).
+Jikan : les 5 catalogues sont chargés UNE FOIS par jour (TTL 24h) :
+  - Sorties du jour (planning hebdomadaire du jour courant)
+  - Simulcasts en cours
+  - Films
+  - Top anime (popularité)
+  - Liste des genres
 """
 
 import asyncio
@@ -35,47 +39,70 @@ def _get_paris_now() -> datetime:
     return utc_now + timedelta(hours=PARIS_UTC_OFFSET_SUMMER if dst_start <= utc_now < dst_end else PARIS_UTC_OFFSET_WINTER)
 
 
-def _seconds_until_3am_paris() -> float:
-    """Calcule le nombre de secondes jusqu'à 3h du matin Paris."""
+def _seconds_until_midnight_paris() -> float:
+    """Calcule le nombre de secondes jusqu'à minuit Paris."""
     paris_now = _get_paris_now()
-    # Prochain 3h : aujourd'hui si pas encore passé, sinon demain
-    target = paris_now.replace(hour=3, minute=0, second=0, microsecond=0)
-    if target <= paris_now:
-        target += timedelta(days=1)
-    return max((target - paris_now).total_seconds(), 60)
+    tomorrow = (paris_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max((tomorrow - paris_now).total_seconds(), 60)
 
 
 # ===========================
-# Initialisation / Rafraîchissement des catalogues Adkami via GitHub
-# ===========================
-async def _warmup_adkami_catalogs(force: bool = False) -> None:
-    """
-    Initialise les catalogues Adkami :
-    - force=False (démarrage) : télécharge les fichiers manquants depuis GitHub
-    - force=True  (3h daily)  : re-télécharge TOUS les fichiers depuis GitHub
-
-    Si ADKAMI_CATALOGS_URL n'est pas configurée, les fichiers seed locaux
-    (data/catalogues/) sont utilisés directement sans aucun téléchargement.
-    """
-    try:
-        from astream.scrapers.adkami.catalog_loader import catalog_loader
-        if force:
-            logger.log("ASTREAM", "  ⏳ Adkami : re-téléchargement complet depuis GitHub...")
-            await catalog_loader.refresh_all()
-        else:
-            logger.log("ASTREAM", "  ⏳ Adkami : initialisation des catalogues...")
-            await catalog_loader.initialize()
-        logger.log("ASTREAM", "  ✓ Adkami : catalogues prêts")
-    except Exception as e:
-        logger.error(f"  ✗ Adkami catalogues : {e}")
-
-
-# ===========================
-# Alias de compatibilité
+# Pré-chauffage Jikan
 # ===========================
 async def _warmup_jikan() -> None:
-    """Alias conservé pour compatibilité — délègue à CatalogLoader."""
-    await _warmup_adkami_catalogs(force=True)
+    """
+    Pré-charge TOUS les catalogues Jikan en cache (TTL 24h).
+    Appelé au démarrage et à minuit Paris.
+    Les appels suivants des routes catalog lisent depuis le cache → aucune latence.
+    """
+    try:
+        from astream.services.jikan.client import jikan_client
+        from datetime import datetime as _dt
+
+        today_idx = _dt.now().weekday()
+        day_map = {0: "monday", 1: "tuesday", 2: "wednesday",
+                   3: "thursday", 4: "friday", 5: "saturday", 6: "sunday"}
+        today_en = day_map.get(today_idx, "monday")
+
+        logger.log("ASTREAM", "  ⏳ Jikan : chargement des catalogues...")
+
+        # Toutes les requêtes en séquence (rate limit Jikan : 3 req/s)
+        from astream.services.catalog import GENRE_CATALOG_MAP
+        from astream.services.jikan.service import JIKAN_GENRE_ID_MAP
+
+        tasks_info = [
+            ("Planning du jour",    jikan_client.get_schedules(today_en)),
+            ("Simulcasts",          jikan_client.get_airing(limit=25)),
+            ("Films",               jikan_client.get_movies(limit=25)),
+            ("Top popularité",      jikan_client.get_top_anime(filter_type="bypopularity", limit=25)),
+            ("Top airing",          jikan_client.get_top_anime(filter_type="airing", limit=25)),
+            ("Saison en cours",     jikan_client.get_season_now(limit=25)),
+            ("Prochaine saison",    jikan_client.get_season_upcoming(limit=25)),
+            ("Genres",              jikan_client.get_genres()),
+        ]
+
+        # Ajouter tous les genres du manifest
+        for catalog_id, genre_name in GENRE_CATALOG_MAP.items():
+            genre_id = JIKAN_GENRE_ID_MAP.get(genre_name)
+            if genre_id:
+                tasks_info.append(
+                    (f"Genre {genre_name}", jikan_client.get_anime_by_genre(genre_id=genre_id, limit=25))
+                )
+
+        for label, coro in tasks_info:
+            try:
+                result = await coro
+                count = len(result) if result else 0
+                logger.log("ASTREAM", f"    ✓ Jikan {label} : {count} entrées en cache")
+            except Exception as e:
+                logger.error(f"    ✗ Jikan {label} : {e}")
+            # Pause entre les appels pour respecter le rate limit Jikan (3 req/s max)
+            await asyncio.sleep(1.0)
+
+        logger.log("ASTREAM", "  ✓ Jikan : tous les catalogues en cache")
+
+    except Exception as e:
+        logger.error(f"  ✗ Jikan warmup global : {e}")
 
 
 # ===========================
@@ -111,44 +138,57 @@ async def _warmup_tmdb(anime_list: list) -> None:
         logger.error(f"  ✗ TMDB pré-chauffage : {e}")
 
 
-async def _warmup_tmdb_adkami() -> None:
+async def _warmup_tmdb_jikan() -> None:
     """
-    Pré-charge TMDB pour tous les catalogues Adkami (JSON sur disque).
+    Pré-charge TMDB pour tous les catalogues Jikan :
+    simulcasts, films, top, saison, prochaine saison et les 16 genres.
+    Appelé après _warmup_jikan() pour que les données soient déjà en cache Jikan.
     """
     if not settings.TMDB_API_KEY:
         return
 
     try:
-        from astream.services.adkami_catalog import adkami_catalog_service, ADKAMI_CATALOG_MAP
+        from astream.services.jikan.service import jikan_service
+        from astream.services.catalog import GENRE_CATALOG_MAP
 
-        logger.log("ASTREAM", "  ⏳ TMDB×Adkami : enrichissement de tous les catalogues Adkami...")
+        logger.log("ASTREAM", "  ⏳ TMDB×Jikan : enrichissement de tous les catalogues Jikan...")
 
         all_anime = []
-        seen_ids: set = set()
+        seen_ids = set()
 
         def _collect(items):
             for item in (items or []):
-                mid = item.get("mal_id") or item.get("slug")
+                mid = item.get("mal_id")
                 if mid and mid not in seen_ids:
                     seen_ids.add(mid)
                     all_anime.append(item)
 
-        # Simulcasts
-        _collect(adkami_catalog_service.get_simulcast_catalog(limit=25))
-
-        # Tous les genres
-        for catalog_id, genre_slug in ADKAMI_CATALOG_MAP.items():
+        # Catalogues principaux (lus depuis le cache Jikan)
+        for label, coro in [
+            ("simulcasts",       jikan_service.get_simulcasts(limit=25)),
+            ("films",            jikan_service.get_films(limit=25)),
+            ("top",              jikan_service.get_top_anime(limit=25)),
+            ("saison_now",       jikan_service.get_season_now(limit=25)),
+            ("saison_upcoming",  jikan_service.get_season_upcoming(limit=25)),
+        ]:
             try:
-                _collect(adkami_catalog_service.get_genre_catalog(genre_slug, limit=25))
+                _collect(await coro)
             except Exception as e:
-                logger.error(f"    ✗ TMDB collect genre {genre_slug} : {e}")
+                logger.error(f"    ✗ TMDB collect {label} : {e}")
 
-        logger.log("ASTREAM", f"  ⏳ TMDB×Adkami : enrichissement de {len(all_anime)} anime uniques...")
+        # Tous les genres du manifest
+        for catalog_id, genre_name in GENRE_CATALOG_MAP.items():
+            try:
+                _collect(await jikan_service.get_by_genre(genre_name=genre_name, limit=25))
+            except Exception as e:
+                logger.error(f"    ✗ TMDB collect genre {genre_name} : {e}")
+
+        logger.log("ASTREAM", f"  ⏳ TMDB×Jikan : enrichissement de {len(all_anime)} anime uniques...")
         if all_anime:
             await _warmup_tmdb(all_anime)
 
     except Exception as e:
-        logger.error(f"  ✗ TMDB×Adkami warmup : {e}")
+        logger.error(f"  ✗ TMDB×Jikan warmup : {e}")
 
 
 # ===========================
@@ -203,17 +243,17 @@ async def warmup_startup_caches() -> None:
     except Exception as e:
         logger.error(f"  ✗ Planning/jour : {e}")
 
-    # --- Adkami (catalogues JSON sur disque) ---
-    logger.log("ASTREAM", "② Adkami : construction des catalogues JSON")
-    await _warmup_adkami_catalogs(force=False)
+    # --- Jikan (tous les catalogues) ---
+    logger.log("ASTREAM", "② Jikan : chargement des 5 catalogues")
+    await _warmup_jikan()
 
     # --- TMDB pour Anime-Sama homepage ---
     logger.log("ASTREAM", "③ TMDB : enrichissement homepage Anime-Sama")
     await _warmup_tmdb(homepage_anime)
 
-    # --- TMDB pour Adkami ---
-    logger.log("ASTREAM", "④ TMDB : enrichissement catalogues Adkami")
-    await _warmup_tmdb_adkami()
+    # --- TMDB pour Jikan ---
+    logger.log("ASTREAM", "④ TMDB : enrichissement catalogues Jikan")
+    await _warmup_tmdb_jikan()
 
     logger.log("ASTREAM", "═══════════════════════════════════════")
     logger.log("ASTREAM", "Pré-chauffage terminé — tous les caches prêts")
@@ -254,17 +294,48 @@ async def refresh_daily_caches() -> None:
     except Exception as e:
         logger.error(f"  ✗ Homepage : {e}")
 
-    # --- Adkami : reconstruction complète des catalogues JSON ---
-    logger.log("ASTREAM", "② Adkami : reconstruction des catalogues JSON")
-    await _warmup_adkami_catalogs(force=True)
+    # --- Jikan : invalider tous les caches Jikan ---
+    logger.log("ASTREAM", "② Jikan : invalidation + rechargement")
+    try:
+        from astream.services.catalog import GENRE_CATALOG_MAP
+        from astream.services.jikan.service import JIKAN_GENRE_ID_MAP
+
+        jikan_cache_keys = [
+            "jikan:airing:25",
+            "jikan:movies:25",
+            "jikan:top:bypopularity:25",
+            "jikan:top:airing:25",
+            "jikan:season_now:25",
+            "jikan:season_upcoming:25",
+            "jikan:genres",
+        ]
+        # Invalider le planning du jour
+        day_map = {0: "monday", 1: "tuesday", 2: "wednesday",
+                   3: "thursday", 4: "friday", 5: "saturday", 6: "sunday"}
+        today_key = f"jikan:schedule:{day_map.get(datetime.now().weekday(), 'monday')}"
+        jikan_cache_keys.append(today_key)
+
+        # Invalider tous les caches genre
+        for genre_name in GENRE_CATALOG_MAP.values():
+            genre_id = JIKAN_GENRE_ID_MAP.get(genre_name)
+            if genre_id:
+                jikan_cache_keys.append(f"jikan:genre:{genre_id}:25")
+
+        for key in jikan_cache_keys:
+            try:
+                await CacheManager.invalidate(key)
+            except Exception:
+                pass
+    except Exception as e:
+        logger.error(f"  ✗ Invalidation cache Jikan : {e}")
+
+    # Recharger Jikan après invalidation
+    await _warmup_jikan()
 
     # --- TMDB ---
-    logger.log("ASTREAM", "③ TMDB : ré-enrichissement homepage")
+    logger.log("ASTREAM", "③ TMDB : ré-enrichissement")
     await _warmup_tmdb(homepage_anime)
-
-    # --- TMDB pour Adkami ---
-    logger.log("ASTREAM", "④ TMDB : ré-enrichissement catalogues Adkami")
-    await _warmup_tmdb_adkami()
+    await _warmup_tmdb_jikan()
 
     # Rafraîchir l'Anime Offline Database une fois par semaine (pas daily pour économiser la bande)
     try:
@@ -282,18 +353,18 @@ async def refresh_daily_caches() -> None:
 
 
 # ===========================
-# Scheduler principal (boucle 3h Paris)
+# Scheduler principal (boucle minuit Paris)
 # ===========================
 async def daily_scheduler_task() -> None:
-    """Boucle infinie : attend 3h Paris puis reconstruit tous les catalogues Adkami."""
+    """Boucle infinie : attend minuit Paris puis rafraîchit tous les caches."""
     while True:
         try:
-            wait_seconds = _seconds_until_3am_paris()
+            wait_seconds = _seconds_until_midnight_paris()
             paris_now = _get_paris_now()
             next_run = paris_now + timedelta(seconds=wait_seconds)
             logger.log(
                 "ASTREAM",
-                f"Scheduler : prochain rafraîchissement Adkami à {next_run.strftime('%H:%M')} Paris "
+                f"Scheduler : prochain rafraîchissement à {next_run.strftime('%H:%M')} Paris "
                 f"(dans {wait_seconds / 3600:.1f}h)"
             )
             await asyncio.sleep(wait_seconds)
