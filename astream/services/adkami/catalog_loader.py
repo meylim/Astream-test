@@ -151,13 +151,48 @@ class AdkamiCatalogLoader:
         return self._simulcast_raw
 
     # ===========================
-    # Résolution titre → tt* via Cinemeta + Kitsu
+    # Résolution titre → tt* via Cinemeta (SANS Kitsu)
     # ===========================
+    @staticmethod
+    def _best_match(query: str, results: list) -> Optional[Dict]:
+        """Choisit le résultat Cinemeta dont le titre correspond le mieux."""
+        query_norm = _normalize_key(query)
+        if not query_norm:
+            return results[0] if results else None
+
+        # 1. Match exact normalisé
+        for r in results:
+            name_norm = _normalize_key(r.get("name", ""))
+            if name_norm == query_norm:
+                return r
+
+        # 2. L'un contient l'autre
+        for r in results:
+            name_norm = _normalize_key(r.get("name", ""))
+            if query_norm in name_norm or name_norm in query_norm:
+                return r
+
+        # 3. Intersection de mots >= 50%
+        q_words = set(re.sub(r'[^a-z0-9]', ' ', query.lower()).split())
+        best_score = 0
+        best_result = None
+        for r in results:
+            r_words = set(re.sub(r'[^a-z0-9]', ' ', r.get("name", "").lower()).split())
+            common = len(q_words & r_words)
+            score = common / max(len(q_words), 1)
+            if score > best_score:
+                best_score = score
+                best_result = r
+
+        if best_score >= 0.5:
+            return best_result
+
+        return None
+
     async def _resolve_title(self, title: str) -> Optional[Dict]:
         """
         Résout un titre Adkami en meta Cinemeta (tt*).
-        Utilise le CinemetaClient existant (qui fait Cinemeta + Kitsu validation).
-        Retourne la première correspondance validée ou None.
+        Recherche Cinemeta SANS Kitsu — les titres Adkami sont déjà des anime confirmés.
         """
         from astream.services.cinemeta.client import cinemeta_client
 
@@ -169,27 +204,31 @@ class AdkamiCatalogLoader:
             return cached
 
         try:
-            results = await cinemeta_client.search(title, limit=1)
+            # search_raw = Cinemeta SANS Kitsu
+            results = await cinemeta_client.search_raw(title, limit=5)
             if results:
-                best = results[0]
-                resolved = {
-                    "tt_id": best.get("id", ""),
-                    "name": best.get("name", title),
-                    "type": best.get("type", "series"),
-                    "poster": best.get("poster", ""),
-                    "background": best.get("background", ""),
-                    "description": best.get("description", ""),
-                    "releaseInfo": best.get("releaseInfo", ""),
-                    "imdbRating": best.get("imdbRating", ""),
-                    "runtime": best.get("runtime", ""),
-                    "genres": best.get("genres", []),
-                }
-                self._resolution_cache[key] = resolved
-                return resolved
-            else:
-                # Marquer comme introuvable pour ne pas re-chercher
-                self._resolution_cache[key] = {"_not_found": True}
-                return None
+                best = self._best_match(title, results)
+                if best:
+                    resolved = {
+                        "tt_id": best.get("id", ""),
+                        "name": best.get("name", title),
+                        "type": best.get("type", "series"),
+                        "poster": best.get("poster", ""),
+                        "background": best.get("background", ""),
+                        "description": best.get("description", ""),
+                        "releaseInfo": best.get("releaseInfo", ""),
+                        "imdbRating": best.get("imdbRating", ""),
+                        "runtime": best.get("runtime", ""),
+                        "genres": best.get("genres", []),
+                    }
+                    self._resolution_cache[key] = resolved
+                    logger.debug(f"ADKAMI: Résolu '{title}' → {resolved['tt_id']} ({resolved['name']})")
+                    return resolved
+
+            # Aucun match acceptable
+            self._resolution_cache[key] = {"_not_found": True}
+            logger.debug(f"ADKAMI: Introuvable sur Cinemeta: '{title}'")
+            return None
         except Exception as e:
             logger.warning(f"ADKAMI: Résolution échouée pour '{title}': {e}")
             return None

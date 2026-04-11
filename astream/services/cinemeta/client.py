@@ -86,6 +86,40 @@ class CinemetaClient:
         return meta
 
     # ===========================
+    # Recherche brute (sans validation Kitsu) — pour résolution Adkami
+    # ===========================
+    async def search_raw(self, query: str, limit: int = 5) -> List[Dict]:
+        """
+        Recherche Cinemeta SANS validation Kitsu.
+        Retourne le top 1 résultat série + top 1 film.
+        Utilisée pour résoudre des titres Adkami (déjà confirmés anime)
+        vers un tt* IMDb.
+        """
+        if not query or len(query.strip()) < 2:
+            return []
+
+        safe_query = query.strip().replace("/", " ")
+
+        series_data, movie_data = await asyncio.gather(
+            self._get(
+                f"/catalog/series/top/search={safe_query}.json",
+                cache_key=f"cinemeta:search:series:{safe_query.lower()}",
+                ttl=3600,
+            ),
+            self._get(
+                f"/catalog/movie/top/search={safe_query}.json",
+                cache_key=f"cinemeta:search:movie:{safe_query.lower()}",
+                ttl=3600,
+            ),
+        )
+
+        all_metas: List[Dict] = []
+        all_metas += (series_data or {}).get("metas", [])
+        all_metas += (movie_data or {}).get("metas", [])
+
+        return all_metas[:limit]
+
+    # ===========================
     # Recherche (anime uniquement via validation croisée Kitsu)
     # ===========================
     async def search(self, query: str, limit: int = 10) -> List[Dict]:
