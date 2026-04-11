@@ -187,6 +187,75 @@ def _strip_season_suffix(title: str) -> str:
     return cleaned
 
 
+def _normalize_for_length(title: str) -> str:
+    """
+    Normalise un titre pour la comparaison de longueur :
+    - passe en minuscules
+    - supprime les suffixes Part X / Season X / Saison X / Cour X
+    - supprime la ponctuation de fin
+    - strip les espaces
+    Utilisé pour comparer deux titres "à iso-franchise".
+    """
+    import re as _re
+    t = title.strip().lower()
+    # Supprime les suffixes numériques de saison / partie / cour
+    strip_patterns = [
+        r"\s+part\s+\d+$",
+        r"\s+cour\s+\d+$",
+        r"[:\s]+(?:season|saison)\s+\d+$",
+        r"\s+\d+(?:st|nd|rd|th)?\s+season.*$",
+        r"\s+season\s+\d+.*$",
+        r"\s+(?:ii|iii|iv|2nd|3rd|4th|5th)\s*(?:season|part|cour).*$",
+        r"\s+(?:second|third|fourth|fifth)\s+(?:season|part|cour).*$",
+        r"\s+\(\d{4}\)$",
+        r"\s+\d{4}$",
+    ]
+    for pat in strip_patterns:
+        t = _re.sub(pat, "", t, flags=_re.IGNORECASE).strip()
+    # Supprime la ponctuation finale SAUF ! (qui fait partie de certains titres ex: Haikyu!!)
+    t = t.rstrip(":.,-?")
+    return t.strip()
+
+
+def _pick_best_result(query: str, results: list) -> Optional[dict]:
+    """
+    Sélectionne le meilleur résultat AS parmi une liste, en comparant les
+    longueurs de titres après avoir strippé Part X / Season X / Saison X.
+
+    Logique de scoring (plus le score est bas, meilleur c'est) :
+      score = abs(len(query_norm) - len(result_norm))
+
+    En cas d'égalité, on préfère le résultat dont le titre normalisé
+    commence par le query normalisé (préfixe).
+    """
+    if not results:
+        return None
+    if len(results) == 1:
+        return results[0]
+
+    query_norm = _normalize_for_length(query)
+    best = None
+    best_score = float("inf")
+
+    for r in results:
+        # Le titre du résultat peut être dans "name", "title" ou "slug"
+        r_title = r.get("name") or r.get("title") or r.get("slug", "")
+        r_norm = _normalize_for_length(r_title)
+
+        # Score = différence de longueur après normalisation
+        score = abs(len(query_norm) - len(r_norm))
+
+        # Bonus si le résultat commence par le query normalisé
+        if r_norm.startswith(query_norm) or query_norm.startswith(r_norm):
+            score -= 1
+
+        if score < best_score:
+            best_score = score
+            best = r
+
+    return best
+
+
 async def _find_slug_from_titles(titles: Dict[str, Any], animesama_api) -> Optional[str]:
     """
     Cherche le slug Anime-Sama en prioritisant la franchise RACINE.
@@ -194,6 +263,10 @@ async def _find_slug_from_titles(titles: Dict[str, Any], animesama_api) -> Optio
       1. Titre racine (sans suffixe de saison) → meilleure chance de matcher AS
       2. Titre canonical complet
       3. Tous les titres alternatifs
+
+    Quand AS renvoie plusieurs résultats, on sélectionne le meilleur via
+    _pick_best_result() qui compare les longueurs après avoir strippé
+    Part X / Season X / Saison X des deux côtés.
     """
     candidates = []
 
@@ -235,10 +308,15 @@ async def _find_slug_from_titles(titles: Dict[str, Any], animesama_api) -> Optio
             logger.log("ID_RESOLVER", f"Recherche AS pour: '{title}'")
             results = await animesama_api.search_anime(title)
             if results:
-                slug = results[0].get("slug") or results[0].get("id", "").replace("as:", "")
-                if slug:
-                    logger.log("ID_RESOLVER", f"Slug trouvé: '{slug}' via '{title}'")
-                    return slug
+                # ── Moulinette de sélection ──────────────────────────────────
+                # On compare les longueurs APRÈS avoir strippé Part X / Season X
+                # des deux côtés pour éviter de rater la franchise racine.
+                best = _pick_best_result(title, results)
+                if best:
+                    slug = best.get("slug") or best.get("id", "").replace("as:", "")
+                    if slug:
+                        logger.log("ID_RESOLVER", f"Slug trouvé: '{slug}' via '{title}' (score longueur normalisée)")
+                        return slug
         except Exception as e:
             logger.warning(f"ID_RESOLVER: Erreur recherche '{title}': {e}")
 
