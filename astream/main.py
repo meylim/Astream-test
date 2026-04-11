@@ -103,16 +103,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     daily_task = asyncio.create_task(daily_scheduler_task())
     periodic_task = asyncio.create_task(periodic_refresh_task())
 
+    # ============================================================
+    # Résolution Adkami → Cinemeta en arrière-plan
+    # ============================================================
+    from astream.services.adkami.catalog_loader import adkami_loader
+    adkami_task = asyncio.create_task(adkami_loader.background_resolve_all())
+
     try:
         yield
     finally:
         # Annuler toutes les tâches background proprement
-        for task in [cleanup_task, daily_task, periodic_task]:
+        for task in [cleanup_task, daily_task, periodic_task, adkami_task]:
             task.cancel()
 
         try:
             await asyncio.gather(
-                cleanup_task, daily_task, periodic_task,
+                cleanup_task, daily_task, periodic_task, adkami_task,
                 return_exceptions=True
             )
         except asyncio.CancelledError:
