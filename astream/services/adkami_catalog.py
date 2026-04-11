@@ -200,7 +200,7 @@ class AdkamiCatalogService:
             return []
 
         items = _adkami_list_to_astream(entries[:limit * 2], genre_slug)
-        logger.log("ADKAMI", f"get_genre_catalog({genre_slug}): {len(items)} items chargés")
+        logger.log("ANIMESAMA", f"get_genre_catalog({genre_slug}): {len(items)} items chargés")
         return items[:limit]
 
     def get_simulcast_catalog(self, limit: int = 25) -> List[Dict[str, Any]]:
@@ -211,7 +211,7 @@ class AdkamiCatalogService:
             return []
 
         items = _adkami_list_to_astream(entries[:limit * 2], "Simulcast")
-        logger.log("ADKAMI", f"get_simulcast_catalog(): {len(items)} items chargés")
+        logger.log("ANIMESAMA", f"get_simulcast_catalog(): {len(items)} items chargés")
         return items[:limit]
 
     def get_manifest_genres(self) -> List[str]:

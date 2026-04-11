@@ -231,10 +231,10 @@ async def scan_genre(nom_genre: str, id_genre: int) -> List[Dict[str, Any]]:
     Scrape + enrichit un genre complet.
     Sauvegarde dans data/catalogues/final_{genre}.json.
     """
-    logger.log("ADKAMI", f"Scan genre : {nom_genre}")
+    logger.log("ANIMESAMA", f"Scan genre : {nom_genre}")
 
     animes = await _scrape_genre_pages(nom_genre, id_genre)
-    logger.log("ADKAMI", f"  {len(animes)} entrées brutes pour {nom_genre}")
+    logger.log("ANIMESAMA", f"  {len(animes)} entrées brutes pour {nom_genre}")
 
     animes = await _enrich_genre_list(animes)
 
@@ -249,7 +249,7 @@ async def scan_genre(nom_genre: str, id_genre: int) -> List[Dict[str, Any]]:
     # Persistance cache
     _save_cache(_jikan_cache)
 
-    logger.log("ADKAMI", f"  ✅ {nom_genre} → {len(animes)} entrées sauvegardées")
+    logger.log("ANIMESAMA", f"  ✅ {nom_genre} → {len(animes)} entrées sauvegardées")
     return animes
 
 
@@ -262,7 +262,7 @@ async def scan_simulcasts() -> List[Dict[str, Any]]:
     Scrape la page saison Adkami (simulcasts).
     Sauvegarde dans data/catalogues/simulcast.json.
     """
-    logger.log("ADKAMI", "Scan simulcasts...")
+    logger.log("ANIMESAMA", "Scan simulcasts...")
     animes: List[Dict[str, Any]] = []
 
     try:
@@ -314,7 +314,7 @@ async def scan_simulcasts() -> List[Dict[str, Any]]:
         json.dump(animes, f, ensure_ascii=False, indent=2)
 
     _save_cache(_jikan_cache)
-    logger.log("ADKAMI", f"✅ Simulcasts → {len(animes)} entrées sauvegardées")
+    logger.log("ANIMESAMA", f"✅ Simulcasts → {len(animes)} entrées sauvegardées")
     return animes
 
 
@@ -327,14 +327,14 @@ async def build_all_catalogs(force: bool = False) -> None:
     Construit tous les fichiers JSON de catalogue (genres + simulcasts).
     Si force=False, ne reconstruit que les fichiers manquants.
     """
-    logger.log("ADKAMI", "═══ Build catalogues Adkami ═══")
+    logger.log("ANIMESAMA", "═══ Build catalogues Adkami ═══")
 
     # Simulcasts
     sim_path = os.path.join(CATALOGUE_DIR, "simulcast.json")
     if force or not os.path.exists(sim_path):
         await scan_simulcasts()
     else:
-        logger.log("ADKAMI", "  ⏭ simulcast.json déjà présent")
+        logger.log("ANIMESAMA", "  ⏭ simulcast.json déjà présent")
 
     # Genres
     for nom, id_genre in ADKAMI_GENRES.items():
@@ -343,9 +343,9 @@ async def build_all_catalogs(force: bool = False) -> None:
             await scan_genre(nom, id_genre)
             await asyncio.sleep(2.0)   # Pause inter-genre
         else:
-            logger.log("ADKAMI", f"  ⏭ final_{nom.lower()}.json déjà présent")
+            logger.log("ANIMESAMA", f"  ⏭ final_{nom.lower()}.json déjà présent")
 
-    logger.log("ADKAMI", "═══ Build catalogues terminé ═══")
+    logger.log("ANIMESAMA", "═══ Build catalogues terminé ═══")
 
 
 # ===========================
