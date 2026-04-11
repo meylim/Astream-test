@@ -25,7 +25,7 @@ async def setup_database():
         if current_version != DATABASE_VERSION:
             logger.log("DATABASE", f"Migration v{current_version} → v{DATABASE_VERSION}")
 
-            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb', 'anime_xref', 'jikan', 'cinemeta'}
+            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb', 'anime_xref', 'jikan', 'cinemeta', 'kitsu'}
 
             if settings.DATABASE_TYPE == "sqlite":
                 tables = await database.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('db_version', 'sqlite_sequence')")
@@ -86,6 +86,10 @@ async def setup_database():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_cinemeta_key     ON cinemeta(key)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_cinemeta_expires ON cinemeta(expires_at)")
 
+        await database.execute("CREATE TABLE IF NOT EXISTS kitsu (key TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER, expires_at INTEGER)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_kitsu_key     ON kitsu(key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_kitsu_expires ON kitsu(expires_at)")
+
         # Table de références croisées — persistante entre redémarrages
         # Mappe as_slug ↔ imdb_id ↔ tmdb_id ↔ mal_id ↔ kitsu_id
         await database.execute("""
@@ -118,6 +122,7 @@ async def setup_database():
         await database.execute("DELETE FROM tmdb      WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
         await database.execute("DELETE FROM jikan     WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
         await database.execute("DELETE FROM cinemeta  WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM kitsu     WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
 
     except Exception as e:
         logger.error(f"Erreur configuration base de données: {e}")
@@ -144,6 +149,8 @@ async def get_metadata_from_cache(cache_id: str):
         table_name = "jikan"
     elif cache_id.startswith("cinemeta:"):
         table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         logger.warning(f"Préfixe de cache inconnu: {cache_id}")
         return None
@@ -169,6 +176,8 @@ async def set_metadata_to_cache(cache_id: str, data, ttl: int = None):
         table_name = "jikan"
     elif cache_id.startswith("cinemeta:"):
         table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         logger.warning(f"Préfixe de cache inconnu: {cache_id}")
         return
@@ -195,6 +204,8 @@ async def delete_metadata_from_cache(cache_id: str):
         table_name = "jikan"
     elif cache_id.startswith("cinemeta:"):
         table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         logger.warning(f"Préfixe de cache inconnu pour suppression: {cache_id}")
         return
@@ -219,6 +230,8 @@ async def get_cache_age(cache_id: str) -> float:
         table_name = "jikan"
     elif cache_id.startswith("cinemeta:"):
         table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         return float('inf')
 

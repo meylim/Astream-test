@@ -241,5 +241,5 @@ async def filter_jikan_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]
             rejected += 1
             logger.debug(f"KITSU NOK {item.get('title','?')} — {reason}")
 
-    logger.log("KITSU", f"filter_jikan: {len(valid)} OK / {rejected} rejetés sur {len(items)}")
+    logger.debug(f"filter_jikan: {len(valid)} OK / {rejected} rejetés sur {len(items)}")
     return valid
