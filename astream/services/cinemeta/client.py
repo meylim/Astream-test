@@ -13,6 +13,7 @@ Endpoint : https://v3-cinemeta.strem.io
 
 Toutes les réponses sont cachées 7 jours (données stables).
 """
+import asyncio
 import re
 from typing import Optional, Dict, List, Any
 
@@ -21,35 +22,6 @@ from astream.utils.cache import CacheManager
 from astream.utils.logger import logger
 
 CINEMETA_BASE = "https://v3-cinemeta.strem.io"
-
-# Genres et mots-clés qui indiquent qu'un résultat Cinemeta est bien un anime
-# (Cinemeta mélange anime + séries live dans sa recherche)
-_ANIME_COUNTRY_CODES = {"JP", "KR"}  # Japon principalement, Corée pour webtoons
-_ANIME_GENRES = {
-    "animation", "anime", "animated", "cartoon"
-}
-
-
-def _is_likely_anime(meta: Dict) -> bool:
-    """
-    Filtre heuristique pour garder uniquement les anime dans les résultats Cinemeta.
-    Vérifie : country, genre, language.
-    """
-    genres = [g.lower() for g in meta.get("genres", [])]
-    if any(g in _ANIME_GENRES for g in genres):
-        return True
-
-    country = (meta.get("country") or "").upper()
-    if country in _ANIME_COUNTRY_CODES:
-        return True
-
-    # Certains anime n'ont pas de genre "animation" mais ont "Japan" dans country_codes
-    if isinstance(meta.get("country"), list):
-        countries = [c.upper() for c in meta.get("country", [])]
-        if any(c in _ANIME_COUNTRY_CODES for c in countries):
-            return True
-
-    return False
 
 
 class CinemetaClient:
@@ -114,33 +86,70 @@ class CinemetaClient:
         return meta
 
     # ===========================
-    # Recherche (anime uniquement via filtre heuristique)
+    # Recherche (anime uniquement via validation croisée Kitsu)
     # ===========================
     async def search(self, query: str, limit: int = 10) -> List[Dict]:
         """
-        GET /catalog/series/top/search={query}.json
-        Retourne une liste de méta filtrées aux anime.
-        Note : Cinemeta n'est pas anime-only, on filtre les résultats.
+        GET /catalog/series/top/search={query}.json  (séries)
+        GET /catalog/movie/top/search={query}.json   (films)
+
+        Retourne une liste de méta filtrées aux anime, validées par Kitsu.
+        La validation croisée remplace l'ancien filtre heuristique basé sur
+        le pays/genre : chaque résultat Cinemeta est soumis à is_valid_anime_kitsu()
+        qui vérifie son existence dans la base Kitsu (via IMDb ID ou recherche textuelle).
         """
+        # Import ici pour éviter les imports circulaires au chargement du module
+        from astream.services.kitsu.validator import is_valid_anime_kitsu
+
         if not query or len(query.strip()) < 2:
             return []
 
         safe_query = query.strip().replace("/", " ")
-        cache_key = f"cinemeta:search:{safe_query.lower()}"
 
-        data = await self._get(
-            f"/catalog/series/top/search={safe_query}.json",
-            cache_key,
-            ttl=3600,  # Recherches cachées 1h
+        # --- Requêtes parallèles : séries + films ---
+        series_data, movie_data = await asyncio.gather(
+            self._get(
+                f"/catalog/series/top/search={safe_query}.json",
+                cache_key=f"cinemeta:search:series:{safe_query.lower()}",
+                ttl=3600,
+            ),
+            self._get(
+                f"/catalog/movie/top/search={safe_query}.json",
+                cache_key=f"cinemeta:search:movie:{safe_query.lower()}",
+                ttl=3600,
+            ),
         )
 
-        if not data:
+        all_metas: List[Dict] = []
+        all_metas += (series_data or {}).get("metas", [])
+        all_metas += (movie_data  or {}).get("metas", [])
+
+        if not all_metas:
             return []
 
-        metas = data.get("metas", [])
-        # Filtrer aux anime uniquement
-        anime_results = [m for m in metas if _is_likely_anime(m)]
-        logger.log("CINEMETA", f"Search '{query}': {len(metas)} résultats → {len(anime_results)} anime filtrés")
+        # --- Validation Kitsu en parallèle ---
+        validations = await asyncio.gather(
+            *[is_valid_anime_kitsu(safe_query, m) for m in all_metas],
+            return_exceptions=True,
+        )
+
+        anime_results: List[Dict] = []
+        for meta, result in zip(all_metas, validations):
+            if isinstance(result, Exception):
+                logger.warning(f"KITSU validation error for '{meta.get('name')}': {result}")
+                continue
+            is_ok, reason = result
+            if is_ok:
+                anime_results.append(meta)
+                logger.debug(f"KITSU ✅ {meta.get('name')} → {reason}")
+            else:
+                logger.debug(f"KITSU ❌ {meta.get('name')} → {reason}")
+
+        logger.log(
+            "CINEMETA",
+            f"Search '{query}': {len(all_metas)} résultats Cinemeta "
+            f"→ {len(anime_results)} validés Kitsu"
+        )
         return anime_results[:limit]
 
     # ===========================
