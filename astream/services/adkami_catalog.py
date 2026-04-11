@@ -185,6 +185,10 @@ class AdkamiCatalogService:
     au format interne AStream pour les routes /catalog/*.
     """
 
+    def _convert_raw_list(self, entries: List[Dict[str, Any]], genre_slug: str, limit: int = 25) -> List[Dict[str, Any]]:
+        """Convertit une liste brute d'entrées Adkami (issue du scraper) en format AStream."""
+        return _adkami_list_to_astream(entries[:limit * 2], genre_slug)[:limit]
+
     def get_genre_by_display_name(self, display_name: str) -> Optional[str]:
         """Retourne le slug genre Adkami à partir du nom d'affichage."""
         for slug, name in ADKAMI_GENRE_DISPLAY.items():

@@ -17,6 +17,7 @@ from astream.services.adkami_catalog import (
     ADKAMI_CATALOG_MAP,
     ADKAMI_GENRE_DISPLAY,
 )
+from astream.scrapers.adkami.scraper import scan_simulcasts_cached
 from astream.services.cinemeta.client import cinemeta_client
 from astream.services.kitsu.validator import filter_jikan_items
 from astream.services.tmdb.service import tmdb_service
@@ -214,11 +215,19 @@ class CatalogService:
         return await self._pipeline(request, b64config, items, config, f"GENRE '{slug}'")
 
     async def _get_default_catalog(self, request, b64config, config) -> List[Dict]:
-        """Catalogue par défaut = simulcasts Adkami."""
-        items = adkami_catalog_service.get_simulcast_catalog(limit=25)
+        """
+        Catalogue par défaut = simulcasts Adkami rechargés EN DIRECT depuis Adkami.
+        Enrichissement instantané depuis le cache Jikan en mémoire (0 appel Jikan).
+        Fallback sur simulcast.json si Adkami inaccessible.
+        """
+        logger.log("API", "SIMULCAST — scraping Adkami en direct...")
+        raw_entries = await scan_simulcasts_cached()
+        if not raw_entries:
+            return []
+        items = adkami_catalog_service._convert_raw_list(raw_entries, "Simulcast")
         if not items:
             return []
-        return await self._pipeline(request, b64config, items, config, "SIMULCASTS")
+        return await self._pipeline(request, b64config, items, config, "SIMULCASTS LIVE")
 
     # ===========================
     # GENRES (manifest)

@@ -2,16 +2,12 @@
 Scheduler de pré-chauffage et rafraîchissement automatique des caches.
 
 Stratégie :
-  AU DÉMARRAGE  → Anime-Sama (homepage + planning) + Jikan (tous catalogues) + TMDB enrichissement
-  À MINUIT PARIS → Invalide + recharge tous les caches Jikan + Anime-Sama + TMDB
+  AU DÉMARRAGE  → Anime-Sama (homepage + planning) + Adkami (catalogues JSON) + TMDB enrichissement
+  À 3H PARIS    → Reconstruction complète des catalogues Adkami + Anime-Sama + TMDB
   TOUTES LES ~1H → Anticipe expiration TTL homepage + planning Anime-Sama
 
-Jikan : les 5 catalogues sont chargés UNE FOIS par jour (TTL 24h) :
-  - Sorties du jour (planning hebdomadaire du jour courant)
-  - Simulcasts en cours
-  - Films
-  - Top anime (popularité)
-  - Liste des genres
+Adkami : les catalogues JSON sont construits une fois par jour à 3h Paris.
+Simulcast : rechargé EN DIRECT à chaque appel client (scraper.scan_simulcasts_cached).
 """
 
 import asyncio
@@ -39,11 +35,14 @@ def _get_paris_now() -> datetime:
     return utc_now + timedelta(hours=PARIS_UTC_OFFSET_SUMMER if dst_start <= utc_now < dst_end else PARIS_UTC_OFFSET_WINTER)
 
 
-def _seconds_until_midnight_paris() -> float:
-    """Calcule le nombre de secondes jusqu'à minuit Paris."""
+def _seconds_until_3am_paris() -> float:
+    """Calcule le nombre de secondes jusqu'à 3h du matin Paris."""
     paris_now = _get_paris_now()
-    tomorrow = (paris_now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return max((tomorrow - paris_now).total_seconds(), 60)
+    # Prochain 3h : aujourd'hui si pas encore passé, sinon demain
+    target = paris_now.replace(hour=3, minute=0, second=0, microsecond=0)
+    if target <= paris_now:
+        target += timedelta(days=1)
+    return max((target - paris_now).total_seconds(), 60)
 
 
 # ===========================
@@ -275,18 +274,18 @@ async def refresh_daily_caches() -> None:
 
 
 # ===========================
-# Scheduler principal (boucle minuit Paris)
+# Scheduler principal (boucle 3h Paris)
 # ===========================
 async def daily_scheduler_task() -> None:
-    """Boucle infinie : attend minuit Paris puis rafraîchit tous les caches."""
+    """Boucle infinie : attend 3h Paris puis reconstruit tous les catalogues Adkami."""
     while True:
         try:
-            wait_seconds = _seconds_until_midnight_paris()
+            wait_seconds = _seconds_until_3am_paris()
             paris_now = _get_paris_now()
             next_run = paris_now + timedelta(seconds=wait_seconds)
             logger.log(
                 "ASTREAM",
-                f"Scheduler : prochain rafraîchissement à {next_run.strftime('%H:%M')} Paris "
+                f"Scheduler : prochain rafraîchissement Adkami à {next_run.strftime('%H:%M')} Paris "
                 f"(dans {wait_seconds / 3600:.1f}h)"
             )
             await asyncio.sleep(wait_seconds)

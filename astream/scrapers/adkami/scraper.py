@@ -1,14 +1,14 @@
 """
 Adkami Scraper — Port async de generateur_catalogue.py.
 
-Scrape les catalogues Adkami par genre + simulcasts,
-enrichit chaque entrée via Jikan (score, image, mal_id),
-et sauvegarde les résultats en JSON dans data/catalogues/.
+Utilise curl_cffi avec impersonation Chrome (sans proxy AStream) pour
+contourner les protections Adkami, exactement comme le script original
+utilisait requests avec un User-Agent Chrome.
 
-Fichiers générés :
-  data/catalogues/simulcast.json
-  data/catalogues/final_{genre}.json   (un par genre)
-  data/catalogues/cache_jikan.json     (cache Jikan partagé)
+Fichiers générés dans data/catalogues/ :
+  simulcast.json              — saison en cours (rechargé à chaque appel client)
+  final_{genre}.json          — un fichier par genre (rechargé à 3h)
+  cache_jikan.json            — cache Jikan partagé (score, members, image, mal_id)
 """
 
 import asyncio
@@ -19,8 +19,8 @@ import time
 from typing import Dict, List, Optional, Any
 
 from bs4 import BeautifulSoup
+from curl_cffi.requests import AsyncSession
 
-from astream.utils.http_client import http_client
 from astream.utils.logger import logger
 
 # ===========================
@@ -32,7 +32,7 @@ CACHE_FILE = os.path.join(CATALOGUE_DIR, "cache_jikan.json")
 os.makedirs(CATALOGUE_DIR, exist_ok=True)
 
 # ===========================
-# 45 genres Adkami
+# 45 genres Adkami (identique à generateur_catalogue.py)
 # ===========================
 ADKAMI_GENRES: Dict[str, int] = {
     "Action": 1,
@@ -82,12 +82,73 @@ ADKAMI_GENRES: Dict[str, int] = {
     "Magie": 43,
 }
 
-ADKAMI_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+# Headers identiques au script original
+_ADKAMI_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/114.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
 }
 
+_JIKAN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/114.0.0.0 Safari/537.36"
+    )
+}
+
+# Session curl_cffi dédiée Adkami — SANS proxy, avec impersonation Chrome
+# (le proxy AStream est configuré sur http_client global, pas ici)
+_adkami_session: Optional[AsyncSession] = None
+_session_lock = asyncio.Lock()
+
+
+async def _get_session() -> AsyncSession:
+    """Retourne la session curl_cffi dédiée Adkami (création lazy)."""
+    global _adkami_session
+    if _adkami_session is None:
+        async with _session_lock:
+            if _adkami_session is None:
+                _adkami_session = AsyncSession(impersonate="chrome110", timeout=15)
+    return _adkami_session
+
+
+async def _get(url: str, headers: dict, retries: int = 3, delay: float = 2.0) -> Optional[str]:
+    """
+    GET HTTP via curl_cffi Chrome impersonation.
+    Retry automatique sur 403/429/5xx avec backoff.
+    """
+    session = await _get_session()
+    for attempt in range(retries):
+        try:
+            resp = await session.get(url, headers=headers)
+            if resp.status_code == 200:
+                return resp.text
+            if resp.status_code in (403, 429, 503):
+                wait = delay * (attempt + 1)
+                logger.log("ANIMESAMA", f"ADKAMI: HTTP {resp.status_code} sur {url} — attente {wait:.0f}s")
+                await asyncio.sleep(wait)
+                continue
+            logger.log("ANIMESAMA", f"ADKAMI: HTTP {resp.status_code} sur {url}")
+            return None
+        except Exception as e:
+            wait = delay * (attempt + 1)
+            logger.log("ANIMESAMA", f"ADKAMI: Erreur réseau ({e}) — attente {wait:.0f}s")
+            await asyncio.sleep(wait)
+
+    logger.log("ANIMESAMA", f"ADKAMI: Échec après {retries} tentatives pour {url}")
+    return None
+
+
 # ===========================
-# Cache Jikan (JSON sur disque)
+# Cache Jikan (JSON sur disque + mémoire)
 # ===========================
 
 def _load_cache() -> Dict[str, Any]:
@@ -96,7 +157,7 @@ def _load_cache() -> Dict[str, Any]:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as e:
-            logger.warning(f"ADKAMI: Erreur lecture cache : {e}")
+            logger.warning(f"ADKAMI: Erreur lecture cache Jikan : {e}")
     return {}
 
 
@@ -105,50 +166,58 @@ def _save_cache(cache: Dict[str, Any]) -> None:
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(cache, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        logger.warning(f"ADKAMI: Erreur sauvegarde cache : {e}")
+        logger.warning(f"ADKAMI: Erreur sauvegarde cache Jikan : {e}")
 
 
-# Cache Jikan partagé (chargé une fois au démarrage du module)
+# Cache en mémoire — chargé une fois au démarrage du module
 _jikan_cache: Dict[str, Any] = _load_cache()
 _cache_lock = asyncio.Lock()
 
 
 # ===========================
-# Enrichissement Jikan
+# Enrichissement Jikan avec cache
 # ===========================
 
 async def _jikan_enrich(titre: str, url_adkami: str) -> Dict[str, Any]:
     """
-    Cherche un anime sur Jikan et retourne score, members, image_url, mal_id.
-    Utilise le cache (clé = url_adkami si dispo, sinon titre).
+    Cherche l'anime sur Jikan pour obtenir score, members, image_url, mal_id.
+    Clé de cache = url_adkami si disponible, sinon titre.
+    Rate-limit : appelant doit attendre 1.1s entre appels.
     """
     global _jikan_cache
 
     cle = url_adkami if url_adkami else titre
 
+    # Vérification cache (url puis titre)
     async with _cache_lock:
         if cle in _jikan_cache:
             return _jikan_cache[cle]
-        # Fallback sur le titre seul
         if titre in _jikan_cache:
             data = _jikan_cache[titre]
             _jikan_cache[cle] = data
             return data
 
-    # Appel Jikan
-    defaults = {"score_mal": None, "popularite_members": 0, "image_url": "", "mal_id": None}
+    defaults: Dict[str, Any] = {
+        "score_mal": None,
+        "popularite_members": 0,
+        "image_url": "",
+        "mal_id": None,
+    }
+
     try:
-        resp = await http_client.get(
-            f"https://api.jikan.moe/v4/anime",
+        session = await _get_session()
+        resp = await session.get(
+            "https://api.jikan.moe/v4/anime",
             params={"q": titre, "limit": 1},
-            headers=ADKAMI_HEADERS,
+            headers=_JIKAN_HEADERS,
+            timeout=10,
         )
         if resp.status_code == 200:
             data_list = resp.json().get("data", [])
             if data_list:
                 d = data_list[0]
                 images = d.get("images", {}).get("jpg", {})
-                result = {
+                result: Dict[str, Any] = {
                     "score_mal": d.get("score"),
                     "popularite_members": d.get("members", 0),
                     "image_url": images.get("image_url", ""),
@@ -157,8 +226,10 @@ async def _jikan_enrich(titre: str, url_adkami: str) -> Dict[str, Any]:
                 async with _cache_lock:
                     _jikan_cache[cle] = result
                 return result
+        elif resp.status_code == 429:
+            logger.log("ANIMESAMA", f"ADKAMI: Jikan rate-limit pour '{titre}', skip")
     except Exception as e:
-        logger.warning(f"ADKAMI: Jikan erreur pour '{titre}': {e}")
+        logger.log("ANIMESAMA", f"ADKAMI: Jikan erreur pour '{titre}' : {e}")
 
     async with _cache_lock:
         _jikan_cache[cle] = defaults
@@ -166,156 +237,145 @@ async def _jikan_enrich(titre: str, url_adkami: str) -> Dict[str, Any]:
 
 
 # ===========================
-# Scraping Adkami par genre
-# ===========================
-
-async def _scrape_genre_pages(nom_genre: str, id_genre: int) -> List[Dict[str, Any]]:
-    """Scrape toutes les pages d'un genre Adkami."""
-    animes: List[Dict[str, Any]] = []
-    page = 0
-
-    while True:
-        url = (
-            f"https://www.adkami.com/video"
-            f"?search=&genres%5B%5D={id_genre}&n=&n2=10&t=0&s=&g=&p={page}&order=0&e=&d1=&d2=&q="
-        )
-        try:
-            resp = await http_client.get(url, headers=ADKAMI_HEADERS)
-            soup = BeautifulSoup(resp.text, "html.parser")
-            items = soup.find_all("div", class_="video-item-list")
-
-            if not items:
-                break
-
-            for item in items:
-                title_tag = item.find("span", class_="title") or item.find("h3")
-                if not title_tag:
-                    continue
-                a_tag = item.find("a")
-                url_adkami = a_tag.get("href", "") if a_tag else ""
-                animes.append({
-                    "titre_affiche": title_tag.text.strip(),
-                    "titre_recherche": title_tag.text.strip(),
-                    "url_adkami": url_adkami,
-                    "source": nom_genre,
-                })
-
-            page += 1
-            await asyncio.sleep(1.0)
-
-        except Exception as e:
-            logger.error(f"ADKAMI [{nom_genre}] page {page}: {e}")
-            break
-
-    return animes
-
-
-async def _enrich_genre_list(animes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Enrichit chaque entrée via Jikan (avec rate-limit 1 req/s)."""
-    enriched: List[Dict[str, Any]] = []
-
-    for anime in animes:
-        titre = anime["titre_recherche"]
-        url = anime.get("url_adkami", "")
-
-        jikan_data = await _jikan_enrich(titre, url)
-        anime.update(jikan_data)
-        enriched.append(anime)
-        await asyncio.sleep(1.1)   # Rate limit Jikan
-
-    return enriched
-
-
-async def scan_genre(nom_genre: str, id_genre: int) -> List[Dict[str, Any]]:
-    """
-    Scrape + enrichit un genre complet.
-    Sauvegarde dans data/catalogues/final_{genre}.json.
-    """
-    logger.log("ANIMESAMA", f"Scan genre : {nom_genre}")
-
-    animes = await _scrape_genre_pages(nom_genre, id_genre)
-    logger.log("ANIMESAMA", f"  {len(animes)} entrées brutes pour {nom_genre}")
-
-    animes = await _enrich_genre_list(animes)
-
-    # Tri par popularité décroissante
-    animes.sort(key=lambda x: x.get("popularite_members", 0) or 0, reverse=True)
-
-    # Sauvegarde
-    path = os.path.join(CATALOGUE_DIR, f"final_{nom_genre.lower()}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(animes, f, ensure_ascii=False, indent=2)
-
-    # Persistance cache
-    _save_cache(_jikan_cache)
-
-    logger.log("ANIMESAMA", f"  ✅ {nom_genre} → {len(animes)} entrées sauvegardées")
-    return animes
-
-
-# ===========================
-# Scraping Simulcasts Adkami
+# Scraping Adkami — Simulcasts
 # ===========================
 
 async def scan_simulcasts() -> List[Dict[str, Any]]:
     """
-    Scrape la page saison Adkami (simulcasts).
+    Scrape la page saison Adkami et enrichit via Jikan.
     Sauvegarde dans data/catalogues/simulcast.json.
     """
-    logger.log("ANIMESAMA", "Scan simulcasts...")
+    logger.log("ANIMESAMA", "ADKAMI: Scan simulcasts...")
     animes: List[Dict[str, Any]] = []
 
-    try:
-        resp = await http_client.get(
-            "https://www.adkami.com/anime/season",
-            headers=ADKAMI_HEADERS,
-        )
-        soup = BeautifulSoup(resp.text, "html.parser")
-        items = soup.find_all("div", class_="fiche-info")
+    html = await _get("https://www.adkami.com/anime/season", _ADKAMI_HEADERS)
+    if not html:
+        logger.log("ANIMESAMA", "ADKAMI: Impossible de récupérer la page simulcasts")
+        return []
 
-        for item in items:
-            a_tag = item.find("a")
-            if not a_tag:
-                continue
-            title_tag = a_tag.find("h4")
-            if not title_tag:
-                continue
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.find_all("div", class_="fiche-info")
 
-            titre = title_tag.text.strip()
-            is_suite = bool(re.search(r"saison|season|part", titre.lower()))
+    for item in items:
+        a_tag = item.find("a")
+        if not a_tag:
+            continue
+        title_tag = a_tag.find("h4")
+        if not title_tag:
+            continue
 
-            image_url = ""
-            img_tag = a_tag.find("img")
-            if img_tag and img_tag.get("data-original"):
-                image_url = img_tag["data-original"]
+        titre = title_tag.text.strip()
+        is_suite = bool(re.search(r"saison|season|part", titre.lower()))
 
-            animes.append({
-                "titre_affiche": titre,
-                "titre_recherche": titre,
-                "est_suite": is_suite,
-                "image_url": image_url,
-                "score_mal": None,
-                "popularite_members": 0,
-                "mal_id": None,
-                "source": "Simulcast",
-            })
+        image_url = ""
+        img_tag = a_tag.find("img")
+        if img_tag and img_tag.get("data-original"):
+            image_url = img_tag["data-original"]
 
-    except Exception as e:
-        logger.error(f"ADKAMI: Erreur simulcasts : {e}")
+        animes.append({
+            "titre_affiche": titre,
+            "titre_recherche": titre,
+            "est_suite": is_suite,
+            "image_url": image_url,
+            "score_mal": None,
+            "popularite_members": 0,
+            "mal_id": None,
+            "source": "Simulcast",
+        })
 
-    # Enrichissement Jikan
+    logger.log("ANIMESAMA", f"ADKAMI: {len(animes)} simulcasts trouvés — enrichissement Jikan...")
+
     for anime in animes:
         jikan_data = await _jikan_enrich(anime["titre_recherche"], "")
-        anime.update(jikan_data)
-        await asyncio.sleep(1.1)
-
-    path = os.path.join(CATALOGUE_DIR, "simulcast.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(animes, f, ensure_ascii=False, indent=2)
+        # Jikan image prioritaire, sinon garder celle d'Adkami
+        if jikan_data.get("image_url"):
+            anime["image_url"] = jikan_data["image_url"]
+        anime["score_mal"] = jikan_data["score_mal"]
+        anime["popularite_members"] = jikan_data["popularite_members"]
+        anime["mal_id"] = jikan_data["mal_id"]
+        await asyncio.sleep(1.1)   # Rate-limit Jikan
 
     _save_cache(_jikan_cache)
-    logger.log("ANIMESAMA", f"✅ Simulcasts → {len(animes)} entrées sauvegardées")
+    _save_json(os.path.join(CATALOGUE_DIR, "simulcast.json"), animes)
+    logger.log("ANIMESAMA", f"ADKAMI: ✅ Simulcasts → {len(animes)} entrées sauvegardées")
     return animes
+
+
+# ===========================
+# Scraping Adkami — Genre (paginé)
+# ===========================
+
+async def scan_genre(nom_genre: str, id_genre: int) -> List[Dict[str, Any]]:
+    """
+    Scrape toutes les pages d'un genre Adkami avec pagination.
+    Enrichit via Jikan. Sauvegarde dans data/catalogues/final_{genre}.json.
+    """
+    logger.log("ANIMESAMA", f"ADKAMI: Scan genre '{nom_genre}'...")
+    animes_bruts: List[Dict[str, Any]] = []
+    page = 0
+
+    # — Étape A : Extraction paginée (identique à generateur_catalogue.py) —
+    while True:
+        url = (
+            f"https://www.adkami.com/video"
+            f"?search=&genres%5B%5D={id_genre}&n=&n2=10&t=0"
+            f"&s=&g=&p={page}&order=0&e=&d1=&d2=&q="
+        )
+
+        html = await _get(url, _ADKAMI_HEADERS)
+        if not html:
+            break
+
+        soup = BeautifulSoup(html, "html.parser")
+        items = soup.find_all("div", class_="video-item-list")
+
+        if not items:
+            break   # Fin de pagination
+
+        for item in items:
+            title_tag = item.find("span", class_="title") or item.find("h3")
+            if not title_tag:
+                continue
+            a_tag = item.find("a")
+            url_adkami = a_tag.get("href", "") if a_tag else ""
+            animes_bruts.append({
+                "titre_affiche": title_tag.text.strip(),
+                "titre_recherche": title_tag.text.strip(),
+                "url_adkami": url_adkami,
+                "source": nom_genre,
+            })
+
+        page += 1
+        await asyncio.sleep(1.0)   # Politesse Adkami
+
+    logger.log("ANIMESAMA", f"ADKAMI: {len(animes_bruts)} entrées brutes pour '{nom_genre}' — enrichissement Jikan...")
+
+    # — Étape B : Enrichissement Jikan —
+    resultats: List[Dict[str, Any]] = []
+    for anime in animes_bruts:
+        titre = anime["titre_recherche"]
+        url_a = anime.get("url_adkami", "")
+
+        # Valeurs par défaut sécurisées
+        anime.update({
+            "score_mal": None,
+            "popularite_members": 0,
+            "image_url": "",
+            "mal_id": None,
+        })
+
+        jikan_data = await _jikan_enrich(titre, url_a)
+        anime.update(jikan_data)
+        resultats.append(anime)
+        await asyncio.sleep(1.1)   # Rate-limit Jikan
+
+    # — Étape C : Tri par popularité décroissante —
+    resultats.sort(key=lambda x: x.get("popularite_members", 0) or 0, reverse=True)
+
+    _save_cache(_jikan_cache)
+    _save_json(os.path.join(CATALOGUE_DIR, f"final_{nom_genre.lower()}.json"), resultats)
+    logger.log("ANIMESAMA", f"ADKAMI: ✅ Genre '{nom_genre}' → {len(resultats)} entrées sauvegardées")
+    return resultats
 
 
 # ===========================
@@ -324,33 +384,106 @@ async def scan_simulcasts() -> List[Dict[str, Any]]:
 
 async def build_all_catalogs(force: bool = False) -> None:
     """
-    Construit tous les fichiers JSON de catalogue (genres + simulcasts).
-    Si force=False, ne reconstruit que les fichiers manquants.
+    Construit tous les fichiers JSON (genres + simulcasts).
+    force=False : ne reconstruit que les fichiers manquants.
+    force=True  : reconstruit tout (run quotidien à 3h).
     """
-    logger.log("ANIMESAMA", "═══ Build catalogues Adkami ═══")
+    logger.log("ANIMESAMA", "ADKAMI: ═══ Build catalogues Adkami ═══")
 
     # Simulcasts
     sim_path = os.path.join(CATALOGUE_DIR, "simulcast.json")
     if force or not os.path.exists(sim_path):
         await scan_simulcasts()
     else:
-        logger.log("ANIMESAMA", "  ⏭ simulcast.json déjà présent")
+        logger.log("ANIMESAMA", "ADKAMI: ⏭ simulcast.json déjà présent")
 
-    # Genres
+    # Genres (séquentiels pour respecter les rate-limits)
     for nom, id_genre in ADKAMI_GENRES.items():
         genre_path = os.path.join(CATALOGUE_DIR, f"final_{nom.lower()}.json")
         if force or not os.path.exists(genre_path):
             await scan_genre(nom, id_genre)
-            await asyncio.sleep(2.0)   # Pause inter-genre
+            await asyncio.sleep(2.0)   # Pause entre genres
         else:
-            logger.log("ANIMESAMA", f"  ⏭ final_{nom.lower()}.json déjà présent")
+            logger.log("ANIMESAMA", f"ADKAMI: ⏭ final_{nom.lower()}.json déjà présent")
 
-    logger.log("ANIMESAMA", "═══ Build catalogues terminé ═══")
+    logger.log("ANIMESAMA", "ADKAMI: ═══ Build catalogues terminé ═══")
 
 
 # ===========================
-# Lecture des catalogues JSON
+# Simulcast EN DIRECT (appelé à chaque requête client)
+# — 1 seul appel HTTP Adkami, enrichissement depuis cache mémoire uniquement —
 # ===========================
+
+async def scan_simulcasts_cached() -> List[Dict[str, Any]]:
+    """
+    Scrape la page simulcast Adkami EN DIRECT.
+    Enrichissement 0-latence : uniquement depuis _jikan_cache en mémoire.
+    Les titres inconnus sont retournés avec l'image Adkami + score None.
+    Sauvegarde le résultat dans simulcast.json.
+    Fallback sur simulcast.json si Adkami inaccessible.
+    """
+    html = await _get("https://www.adkami.com/anime/season", _ADKAMI_HEADERS)
+    if not html:
+        logger.log("ANIMESAMA", "ADKAMI: Simulcast live inaccessible — fallback JSON")
+        return load_simulcast_catalog()
+
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.find_all("div", class_="fiche-info")
+
+    if not items:
+        logger.log("ANIMESAMA", "ADKAMI: Simulcast live vide — fallback JSON")
+        return load_simulcast_catalog()
+
+    animes: List[Dict[str, Any]] = []
+
+    for item in items:
+        a_tag = item.find("a")
+        if not a_tag:
+            continue
+        title_tag = a_tag.find("h4")
+        if not title_tag:
+            continue
+
+        titre = title_tag.text.strip()
+        is_suite = bool(re.search(r"saison|season|part", titre.lower()))
+
+        # Image depuis la page Adkami (toujours disponible)
+        image_adkami = ""
+        img_tag = a_tag.find("img")
+        if img_tag and img_tag.get("data-original"):
+            image_adkami = img_tag["data-original"]
+
+        # Enrichissement depuis le cache mémoire (0 latence, 0 appel Jikan)
+        cached = _jikan_cache.get(titre) or {}
+
+        animes.append({
+            "titre_affiche":      titre,
+            "titre_recherche":    titre,
+            "est_suite":          is_suite,
+            "image_url":          cached.get("image_url") or image_adkami,
+            "score_mal":          cached.get("score_mal"),
+            "popularite_members": cached.get("popularite_members", 0),
+            "mal_id":             cached.get("mal_id"),
+            "source":             "Simulcast",
+        })
+
+    # Sauvegarde asynchrone (mise à jour du fichier en arrière-plan)
+    _save_json(os.path.join(CATALOGUE_DIR, "simulcast.json"), animes)
+    logger.log("ANIMESAMA", f"ADKAMI: Simulcast live → {len(animes)} entrées (cache mémoire)")
+    return animes
+
+
+# ===========================
+# Helpers I/O
+# ===========================
+
+def _save_json(path: str, data: Any) -> None:
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning(f"ADKAMI: Erreur sauvegarde {path}: {e}")
+
 
 def load_genre_catalog(nom_genre: str) -> List[Dict[str, Any]]:
     """Charge le catalogue JSON d'un genre depuis le disque."""
@@ -361,7 +494,7 @@ def load_genre_catalog(nom_genre: str) -> List[Dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"ADKAMI: Erreur lecture {path}: {e}")
+        logger.warning(f"ADKAMI: Erreur lecture {path}: {e}")
         return []
 
 
@@ -374,5 +507,5 @@ def load_simulcast_catalog() -> List[Dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
-        logger.error(f"ADKAMI: Erreur lecture simulcast: {e}")
+        logger.warning(f"ADKAMI: Erreur lecture simulcast: {e}")
         return []
