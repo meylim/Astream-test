@@ -55,6 +55,7 @@ class AppSettings(BaseSettings):
     DATASET_ENABLED: Optional[bool] = True
     DATASET_URL: Optional[str] = None
     DATASET_UPDATE_INTERVAL: Optional[int] = 3600
+    ADKAMI_CATALOGS_URL: Optional[str] = None   # URL GitHub base des catalogues Adkami
     EPISODE_TTL: Optional[int] = 3600
     DYNAMIC_LIST_TTL: Optional[int] = 3600
     PLANNING_TTL: Optional[int] = 3600

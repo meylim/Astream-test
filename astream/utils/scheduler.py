@@ -46,27 +46,35 @@ def _seconds_until_3am_paris() -> float:
 
 
 # ===========================
-# Build / Rafraîchissement des catalogues Adkami
+# Initialisation / Rafraîchissement des catalogues Adkami via GitHub
 # ===========================
 async def _warmup_adkami_catalogs(force: bool = False) -> None:
     """
-    Construit les catalogues Adkami (JSON sur disque) si nécessaire.
-    force=True : reconstruit même si les fichiers existent déjà.
+    Initialise les catalogues Adkami :
+    - force=False (démarrage) : télécharge les fichiers manquants depuis GitHub
+    - force=True  (3h daily)  : re-télécharge TOUS les fichiers depuis GitHub
+
+    Si ADKAMI_CATALOGS_URL n'est pas configurée, les fichiers seed locaux
+    (data/catalogues/) sont utilisés directement sans aucun téléchargement.
     """
     try:
-        from astream.scrapers.adkami.scraper import build_all_catalogs
-        logger.log("ASTREAM", "  ⏳ Adkami : construction des catalogues...")
-        await build_all_catalogs(force=force)
+        from astream.scrapers.adkami.catalog_loader import catalog_loader
+        if force:
+            logger.log("ASTREAM", "  ⏳ Adkami : re-téléchargement complet depuis GitHub...")
+            await catalog_loader.refresh_all()
+        else:
+            logger.log("ASTREAM", "  ⏳ Adkami : initialisation des catalogues...")
+            await catalog_loader.initialize()
         logger.log("ASTREAM", "  ✓ Adkami : catalogues prêts")
     except Exception as e:
-        logger.error(f"  ✗ Adkami build catalogues : {e}")
+        logger.error(f"  ✗ Adkami catalogues : {e}")
 
 
 # ===========================
-# Alias de compatibilité (utilisé dans refresh_daily_caches)
+# Alias de compatibilité
 # ===========================
 async def _warmup_jikan() -> None:
-    """Alias conservé pour la compatibilité — délègue à Adkami."""
+    """Alias conservé pour compatibilité — délègue à CatalogLoader."""
     await _warmup_adkami_catalogs(force=True)
 
 
