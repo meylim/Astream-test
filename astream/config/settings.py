@@ -69,6 +69,7 @@ class AppSettings(BaseSettings):
     LOG_LEVEL: Optional[str] = "DEBUG"
     TMDB_API_KEY: Optional[str] = None
     TMDB_TTL: Optional[int] = 604800
+    JIKAN_TTL: Optional[int] = 3600
 
 
 # ===========================
@@ -124,40 +125,82 @@ def get_base_manifest() -> Dict[str, Any]:
         "id": settings.ADDON_ID,
         "name": settings.ADDON_NAME,
         "description": f"{settings.ADDON_NAME} – Addon non officiel pour accéder au contenu d'Anime-Sama",
-        "version": "2.1.4",
-        "catalogs": [
+        "version": "3.1.0",
+                "catalogs": [
             {
-                "type": "anime",
+                "type": "series",
                 "id": "animesama_catalog",
-                "name": "Anime-Sama",
+                "name": "🔍 Recherche Anime",
                 "extra": [
                     {"name": "search", "isRequired": False},
-                    {"name": "genre", "isRequired": False, "options": []}
+                    {"name": "genre", "isRequired": False, "options": []},
+                    {"name": "skip", "isRequired": False}
                 ]
             },
             {
-                "type": "anime",
-                "id": "animesama_en_cours",
-                "name": "Anime-Sama — En cours",
-                "extra": []
+                "type": "series",
+                "id": "adkami_simulcasts",
+                "name": "📡 Simulcasts en cours",
+                "extra": [{"name": "skip", "isRequired": False}]
             },
-            {
-                "type": "anime",
-                "id": "animesama_nouveautes",
-                "name": "Anime-Sama — Nouveautés",
-                "extra": []
-            },
-            {
-                "type": "anime",
-                "id": "animesama_sorties_du_jour",
-                "name": "Anime-Sama — Sorties du jour",
-                "extra": []
-            }
+            {"type": "series", "id": "adkami_genre_action", "name": "⚔️ Action", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_amitie", "name": "🤝 Amitié", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_aventure", "name": "🗺️ Aventure", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_combat", "name": "🥊 Combat", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_comedie", "name": "😂 Comédie", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_contes_et_recits", "name": "📖 Contes et Récits", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_cyber_et_mecha", "name": "🤖 Cyber et Mecha", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_dark_fantasy", "name": "🌑 Dark Fantasy", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_drame", "name": "🎭 Drame", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_ecchi", "name": "🔥 Ecchi", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_educatif", "name": "📚 Educatif", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_enigme_et_policier", "name": "🔍 Enigme et Policier", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_epique_et_heroique", "name": "🦸 Épique et Héroïque", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_espace_et_sci_fiction", "name": "🚀 Espace et Sci-Fiction", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_familial_et_jeunesse", "name": "👨‍👩‍👧 Familial et Jeunesse", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_fantastique_et_mythe", "name": "🧙 Fantastique et Mythe", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_fantasy", "name": "✨ Fantasy", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_gastronomie", "name": "🍜 Gastronomie", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_gender_bender", "name": "🔄 Gender Bender", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_gyaru", "name": "💅 Gyaru", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_harem", "name": "💕 Harem", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_historique", "name": "⛩️ Historique", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_horreur", "name": "😱 Horreur", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_idols", "name": "🎤 Idols", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_inceste", "name": "⚠️ Inceste", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_isekai", "name": "🌀 Isekai", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_magical_girl", "name": "🪄 Magical Girl", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_magie", "name": "🎩 Magie", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_mature", "name": "🔞 Mature", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_moe", "name": "🥰 Moe", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_monster_girl", "name": "👾 Monster Girl", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_musical", "name": "🎵 Musical", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_mystere", "name": "❓ Mystère", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_psychologique", "name": "🧠 Psychologique", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_romance", "name": "💗 Romance", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_school_life", "name": "🏫 School Life", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_sport", "name": "⚽ Sport", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_surnaturel", "name": "👻 Surnaturel", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_survival_game", "name": "🎯 Survival Game", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_thriller", "name": "😰 Thriller", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_tokusatsu", "name": "🦹 Tokusatsu", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_tranche_de_vie", "name": "☀️ Tranche de vie", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_triangle_amoureux", "name": "💔 Triangle Amoureux", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_yaoi", "name": "👬 Yaoi", "extra": [{"name": "skip", "isRequired": False}]},
+            {"type": "series", "id": "adkami_genre_yuri", "name": "👭 Yuri", "extra": [{"name": "skip", "isRequired": False}]},
         ],
         "resources": [
             "catalog",
-            {"name": "meta", "types": ["anime"], "idPrefixes": ["as"]},
-            {"name": "stream", "types": ["movie", "series", "anime"], "idPrefixes": ["tt", "kitsu", "as"]}
+            {
+                "name": "meta",
+                "types": ["anime"],
+                "idPrefixes": ["as", "jikan"]
+            },
+            {
+                "name": "stream",
+                "types": ["series", "movie", "anime"],
+                "idPrefixes": ["tt", "kitsu", "as", "jikan", "tmdb"]
+            }
         ],
         "types": ["movie", "series", "anime"],
         "logo": "https://raw.githubusercontent.com/Dyhlio/astream/refs/heads/main/astream/public/astream-logo.jpg",

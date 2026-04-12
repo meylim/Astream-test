@@ -12,9 +12,37 @@ from astream.utils.data_loader import get_dataset_loader
 from astream.utils.cache import CacheManager
 from astream.utils.timing import FlowTimer, timed_step
 from astream.utils.id_resolver import resolve_external_id_to_slug, is_external_id, extract_episode_info_from_id
-from astream.config.settings import settings
+from astream.config.settings import settings, SEASON_TYPE_FILM
 from astream.utils.languages import filter_by_language, sort_by_language_priority
 from astream.utils.stremio_helpers import format_stream_for_stremio
+
+
+# ===========================
+# Helper : correction de saison pour les films Jikan
+# ===========================
+async def _resolve_jikan_movie_season(anime_slug: str, season: int, episode: int):
+    """
+    Pour les IDs Jikan résolus en s1e1, vérifie si la saison 1 existe sur Anime-Sama.
+    Si non, tente la saison 990 (SEASON_TYPE_FILM).
+    Retourne (season, episode) corrigé.
+    """
+    try:
+        anime_data = await get_or_fetch_anime_details(animesama_api.details, anime_slug)
+        if not anime_data:
+            return season, episode
+
+        seasons = anime_data.get("seasons", [])
+        season_numbers = {s.get("season_number") for s in seasons}
+
+        if 1 not in season_numbers and SEASON_TYPE_FILM in season_numbers:
+            logger.log("STREAM", f"Jikan film détecté pour {anime_slug} → saison {SEASON_TYPE_FILM}")
+            return SEASON_TYPE_FILM, 1
+
+        return season, episode
+    except Exception as e:
+        logger.debug(f"_resolve_jikan_movie_season: {e}")
+        return season, episode
+
 
 
 # ===========================
@@ -59,6 +87,17 @@ class StreamService:
                         logger.warning(f"Impossible de résoudre {external_id} vers un slug Anime-Sama")
                         return []
                     logger.log("ID_RESOLVER", f"{external_id} → slug: {anime_slug}")
+
+                    # --- Correction saison pour films / mauvais mapping ---
+                    # Jikan et TMDB résolvent les films en s1e1, mais Anime-Sama
+                    # stocke les films en saison 990. On auto-détecte.
+                    if season_number == 1 and (
+                        external_id.startswith("jikan:")
+                        or external_id.startswith("tmdb:")
+                    ):
+                        season_number, episode_number = await _resolve_jikan_movie_season(
+                            anime_slug, season_number, episode_number
+                        )
                 else:
                     parsed_id = MediaIdParser.parse_episode_id(episode_id)
                     if not parsed_id or parsed_id['is_metadata_only']:

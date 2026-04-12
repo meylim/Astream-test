@@ -1,0 +1,938 @@
+[
+    {
+        "titre_affiche": "009-1",
+        "titre_recherche": "009-1",
+        "url_adkami": "https://www.adkami.com/anime/176",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "100-man no Inochi no Ue ni Ore wa Tatteiru",
+        "titre_recherche": "100-man no Inochi no Ue ni Ore wa Tatteiru",
+        "url_adkami": "https://www.adkami.com/anime/3918",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "7 Seeds",
+        "titre_recherche": "7 Seeds",
+        "url_adkami": "https://www.adkami.com/anime/3473",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "B: The Beginning",
+        "titre_recherche": "B: The Beginning",
+        "url_adkami": "https://www.adkami.com/anime/2723",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Babylon",
+        "titre_recherche": "Babylon",
+        "url_adkami": "https://www.adkami.com/anime/3605",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Bio Hunter",
+        "titre_recherche": "Bio Hunter",
+        "url_adkami": "https://www.adkami.com/anime/4714",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Biohazard: Infinite Darkness",
+        "titre_recherche": "Biohazard: Infinite Darkness",
+        "url_adkami": "https://www.adkami.com/anime/4254",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Black Magic M-66",
+        "titre_recherche": "Black Magic M-66",
+        "url_adkami": "https://www.adkami.com/anime/4003",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Blade Runner : Black Lotus",
+        "titre_recherche": "Blade Runner : Black Lotus",
+        "url_adkami": "https://www.adkami.com/anime/4431",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "C: The Money of Soul and Possibility Control",
+        "titre_recherche": "C: The Money of Soul and Possibility Control",
+        "url_adkami": "https://www.adkami.com/anime/133",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "ChäoS;HEAd",
+        "titre_recherche": "ChäoS;HEAd",
+        "url_adkami": "https://www.adkami.com/anime/78",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Code Geass: Hangyaku no Lelouch",
+        "titre_recherche": "Code Geass: Hangyaku no Lelouch",
+        "url_adkami": "https://www.adkami.com/anime/2931",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Code Geass: Hangyaku no Lelouch",
+        "titre_recherche": "Code Geass: Hangyaku no Lelouch",
+        "url_adkami": "https://www.adkami.com/anime/25",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Code Geass: Hangyaku no Lelouch R2",
+        "titre_recherche": "Code Geass: Hangyaku no Lelouch R2",
+        "url_adkami": "https://www.adkami.com/anime/1",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Da Li Si Ri Zhi",
+        "titre_recherche": "Da Li Si Ri Zhi",
+        "url_adkami": "https://www.adkami.com/anime/3823",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Darwin's Game",
+        "titre_recherche": "Darwin's Game",
+        "url_adkami": "https://www.adkami.com/anime/3671",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Deadman Wonderland",
+        "titre_recherche": "Deadman Wonderland",
+        "url_adkami": "https://www.adkami.com/anime/27",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Death Note",
+        "titre_recherche": "Death Note",
+        "url_adkami": "https://www.adkami.com/anime/24",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Detective Conan",
+        "titre_recherche": "Detective Conan",
+        "url_adkami": "https://www.adkami.com/anime/7",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Durarara!!",
+        "titre_recherche": "Durarara!!",
+        "url_adkami": "https://www.adkami.com/anime/303",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Exception",
+        "titre_recherche": "Exception",
+        "url_adkami": "https://www.adkami.com/anime/4761",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Fate/Stay Night",
+        "titre_recherche": "Fate/Stay Night",
+        "url_adkami": "https://www.adkami.com/anime/45",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Fugou Keiji: Balance:Unlimited",
+        "titre_recherche": "Fugou Keiji: Balance:Unlimited",
+        "url_adkami": "https://www.adkami.com/anime/3780",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Fullmetal Alchemist : Brotherhood",
+        "titre_recherche": "Fullmetal Alchemist : Brotherhood",
+        "url_adkami": "https://www.adkami.com/anime/33",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Gigigoegoe Sunghyungsoo",
+        "titre_recherche": "Gigigoegoe Sunghyungsoo",
+        "url_adkami": "https://www.adkami.com/anime/4515",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Great Pretender",
+        "titre_recherche": "Great Pretender",
+        "url_adkami": "https://www.adkami.com/anime/3836",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Guimi Zhi Zhu: Xiaochou Pian",
+        "titre_recherche": "Guimi Zhi Zhu: Xiaochou Pian",
+        "url_adkami": "https://www.adkami.com/anime/5732",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Gyakkyou Burai Kaiji: Ultimate Survivor",
+        "titre_recherche": "Gyakkyou Burai Kaiji: Ultimate Survivor",
+        "url_adkami": "https://www.adkami.com/anime/314",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higashi no Eden",
+        "titre_recherche": "Higashi no Eden",
+        "url_adkami": "https://www.adkami.com/anime/948",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Highschool of the Dead",
+        "titre_recherche": "Highschool of the Dead",
+        "url_adkami": "https://www.adkami.com/anime/26",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higurashi no Naku Koro ni Gou",
+        "titre_recherche": "Higurashi no Naku Koro ni Gou",
+        "url_adkami": "https://www.adkami.com/anime/3910",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higurashi no Naku Koro ni Kai [Saison 2]",
+        "titre_recherche": "Higurashi no Naku Koro ni Kai [Saison 2]",
+        "url_adkami": "https://www.adkami.com/anime/326",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higurashi no Naku Koro ni [Saison 1]",
+        "titre_recherche": "Higurashi no Naku Koro ni [Saison 1]",
+        "url_adkami": "https://www.adkami.com/anime/325",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Hunter x Hunter (2011)",
+        "titre_recherche": "Hunter x Hunter (2011)",
+        "url_adkami": "https://www.adkami.com/anime/34",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "ID:Invaded",
+        "titre_recherche": "ID:Invaded",
+        "url_adkami": "https://www.adkami.com/anime/3674",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Jin-Roh : The Wolf Brigade",
+        "titre_recherche": "Jin-Roh : The Wolf Brigade",
+        "url_adkami": "https://www.adkami.com/anime/2298",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Joker Game",
+        "titre_recherche": "Joker Game",
+        "url_adkami": "https://www.adkami.com/anime/1742",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kaiba",
+        "titre_recherche": "Kaiba",
+        "url_adkami": "https://www.adkami.com/anime/1079",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kakurenbo",
+        "titre_recherche": "Kakurenbo",
+        "url_adkami": "https://www.adkami.com/anime/5128",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kamonohashi Ron no Kindan Suiri",
+        "titre_recherche": "Kamonohashi Ron no Kindan Suiri",
+        "url_adkami": "https://www.adkami.com/anime/4990",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kara no Kyoukai",
+        "titre_recherche": "Kara no Kyoukai",
+        "url_adkami": "https://www.adkami.com/anime/835",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Killing Bites",
+        "titre_recherche": "Killing Bites",
+        "url_adkami": "https://www.adkami.com/anime/2659",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kindaichi Shounen no Jikenbo",
+        "titre_recherche": "Kindaichi Shounen no Jikenbo",
+        "url_adkami": "https://www.adkami.com/anime/451",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kindaichi Shounen no Jikenbo Returns",
+        "titre_recherche": "Kindaichi Shounen no Jikenbo Returns",
+        "url_adkami": "https://www.adkami.com/anime/1113",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Koukaku Kidoutai: SAC_2045",
+        "titre_recherche": "Koukaku Kidoutai: SAC_2045",
+        "url_adkami": "https://www.adkami.com/anime/3819",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Magia Record : Mahou Shoujo Madoka☆Magica Gaiden",
+        "titre_recherche": "Magia Record : Mahou Shoujo Madoka☆Magica Gaiden",
+        "url_adkami": "https://www.adkami.com/anime/3673",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mahou Shoujo Ikusei Keikaku",
+        "titre_recherche": "Mahou Shoujo Ikusei Keikaku",
+        "url_adkami": "https://www.adkami.com/anime/1891",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mahou Shoujo Madoka★Magica",
+        "titre_recherche": "Mahou Shoujo Madoka★Magica",
+        "url_adkami": "https://www.adkami.com/anime/256",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Marriagetoxin",
+        "titre_recherche": "Marriagetoxin",
+        "url_adkami": "https://www.adkami.com/anime/6031",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Meitantei Conan: Zero no Tea Time",
+        "titre_recherche": "Meitantei Conan: Zero no Tea Time",
+        "url_adkami": "https://www.adkami.com/anime/4596",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mi Yu Xing Zhe",
+        "titre_recherche": "Mi Yu Xing Zhe",
+        "url_adkami": "https://www.adkami.com/anime/2894",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Min Diao Ju Yi Wen Lu",
+        "titre_recherche": "Min Diao Ju Yi Wen Lu",
+        "url_adkami": "https://www.adkami.com/anime/4063",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mirai Nikki",
+        "titre_recherche": "Mirai Nikki",
+        "url_adkami": "https://www.adkami.com/anime/130",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Monster",
+        "titre_recherche": "Monster",
+        "url_adkami": "https://www.adkami.com/anime/307",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Munou na Nana",
+        "titre_recherche": "Munou na Nana",
+        "url_adkami": "https://www.adkami.com/anime/3931",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "My Home Hero",
+        "titre_recherche": "My Home Hero",
+        "url_adkami": "https://www.adkami.com/anime/4846",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Perfect Blue",
+        "titre_recherche": "Perfect Blue",
+        "url_adkami": "https://www.adkami.com/anime/2297",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Pet",
+        "titre_recherche": "Pet",
+        "url_adkami": "https://www.adkami.com/anime/3684",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Psycho Pass : Sinners of the System",
+        "titre_recherche": "Psycho Pass : Sinners of the System",
+        "url_adkami": "https://www.adkami.com/anime/3600",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Psycho-Pass",
+        "titre_recherche": "Psycho-Pass",
+        "url_adkami": "https://www.adkami.com/anime/203",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Rainbow: Nisha Rokubou no Shichinin",
+        "titre_recherche": "Rainbow: Nisha Rokubou no Shichinin",
+        "url_adkami": "https://www.adkami.com/anime/436",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Re:Zero kara Hajimeru Isekai Seikatsu",
+        "titre_recherche": "Re:Zero kara Hajimeru Isekai Seikatsu",
+        "url_adkami": "https://www.adkami.com/anime/1736",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Reincarnation no Kaben",
+        "titre_recherche": "Reincarnation no Kaben",
+        "url_adkami": "https://www.adkami.com/anime/6042",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Satsuriku no Tenshi",
+        "titre_recherche": "Satsuriku no Tenshi",
+        "url_adkami": "https://www.adkami.com/anime/2955",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Selector infected WIXOSS",
+        "titre_recherche": "Selector infected WIXOSS",
+        "url_adkami": "https://www.adkami.com/anime/1099",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Seoul-yeok",
+        "titre_recherche": "Seoul-yeok",
+        "url_adkami": "https://www.adkami.com/anime/3305",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shibou Yuugi de Meshi wo Kuu.",
+        "titre_recherche": "Shibou Yuugi de Meshi wo Kuu.",
+        "url_adkami": "https://www.adkami.com/anime/5951",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shihaisha no Tasogare",
+        "titre_recherche": "Shihaisha no Tasogare",
+        "url_adkami": "https://www.adkami.com/anime/4717",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shingeki no Kyojin: Lost Girls",
+        "titre_recherche": "Shingeki no Kyojin: Lost Girls",
+        "url_adkami": "https://www.adkami.com/anime/2887",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shuangsheng Lingtan",
+        "titre_recherche": "Shuangsheng Lingtan",
+        "url_adkami": "https://www.adkami.com/anime/2906",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Steins;Gate",
+        "titre_recherche": "Steins;Gate",
+        "url_adkami": "https://www.adkami.com/anime/8",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Steins;Gate 0",
+        "titre_recherche": "Steins;Gate 0",
+        "url_adkami": "https://www.adkami.com/anime/2875",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Summer Wars",
+        "titre_recherche": "Summer Wars",
+        "url_adkami": "https://www.adkami.com/anime/1001",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Tantei wa mou, Shindeiru.",
+        "titre_recherche": "Tantei wa mou, Shindeiru.",
+        "url_adkami": "https://www.adkami.com/anime/4244",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Tenrou: Sirius the Jaeger",
+        "titre_recherche": "Tenrou: Sirius the Jaeger",
+        "url_adkami": "https://www.adkami.com/anime/2987",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Tesla Note",
+        "titre_recherche": "Tesla Note",
+        "url_adkami": "https://www.adkami.com/anime/4348",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Trese",
+        "titre_recherche": "Trese",
+        "url_adkami": "https://www.adkami.com/anime/4231",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Umineko no naku koro ni",
+        "titre_recherche": "Umineko no naku koro ni",
+        "url_adkami": "https://www.adkami.com/anime/523",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Warau Salesman NEW",
+        "titre_recherche": "Warau Salesman NEW",
+        "url_adkami": "https://www.adkami.com/anime/2188",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Zankyou no Terror",
+        "titre_recherche": "Zankyou no Terror",
+        "url_adkami": "https://www.adkami.com/anime/1186",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "100-man no Inochi no Ue ni Ore wa Tatteiru",
+        "titre_recherche": "100-man no Inochi no Ue ni Ore wa Tatteiru",
+        "url_adkami": "https://www.adkami.com/anime/3918",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "7 Seeds",
+        "titre_recherche": "7 Seeds",
+        "url_adkami": "https://www.adkami.com/anime/3473",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "B: The Beginning",
+        "titre_recherche": "B: The Beginning",
+        "url_adkami": "https://www.adkami.com/anime/2723",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Babylon",
+        "titre_recherche": "Babylon",
+        "url_adkami": "https://www.adkami.com/anime/3605",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Bio Hunter",
+        "titre_recherche": "Bio Hunter",
+        "url_adkami": "https://www.adkami.com/anime/4714",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Biohazard: Infinite Darkness",
+        "titre_recherche": "Biohazard: Infinite Darkness",
+        "url_adkami": "https://www.adkami.com/anime/4254",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Black Magic M-66",
+        "titre_recherche": "Black Magic M-66",
+        "url_adkami": "https://www.adkami.com/anime/4003",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Blade Runner : Black Lotus",
+        "titre_recherche": "Blade Runner : Black Lotus",
+        "url_adkami": "https://www.adkami.com/anime/4431",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "C: The Money of Soul and Possibility Control",
+        "titre_recherche": "C: The Money of Soul and Possibility Control",
+        "url_adkami": "https://www.adkami.com/anime/133",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "ChäoS;HEAd",
+        "titre_recherche": "ChäoS;HEAd",
+        "url_adkami": "https://www.adkami.com/anime/78",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Code Geass: Hangyaku no Lelouch",
+        "titre_recherche": "Code Geass: Hangyaku no Lelouch",
+        "url_adkami": "https://www.adkami.com/anime/25",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Code Geass: Hangyaku no Lelouch",
+        "titre_recherche": "Code Geass: Hangyaku no Lelouch",
+        "url_adkami": "https://www.adkami.com/anime/2931",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Code Geass: Hangyaku no Lelouch R2",
+        "titre_recherche": "Code Geass: Hangyaku no Lelouch R2",
+        "url_adkami": "https://www.adkami.com/anime/1",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Darwin's Game",
+        "titre_recherche": "Darwin's Game",
+        "url_adkami": "https://www.adkami.com/anime/3671",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Deadman Wonderland",
+        "titre_recherche": "Deadman Wonderland",
+        "url_adkami": "https://www.adkami.com/anime/27",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Death Note",
+        "titre_recherche": "Death Note",
+        "url_adkami": "https://www.adkami.com/anime/24",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Detective Conan",
+        "titre_recherche": "Detective Conan",
+        "url_adkami": "https://www.adkami.com/anime/7",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Durarara!!",
+        "titre_recherche": "Durarara!!",
+        "url_adkami": "https://www.adkami.com/anime/303",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Exception",
+        "titre_recherche": "Exception",
+        "url_adkami": "https://www.adkami.com/anime/4761",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Fate/Stay Night",
+        "titre_recherche": "Fate/Stay Night",
+        "url_adkami": "https://www.adkami.com/anime/45",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Fugou Keiji: Balance:Unlimited",
+        "titre_recherche": "Fugou Keiji: Balance:Unlimited",
+        "url_adkami": "https://www.adkami.com/anime/3780",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Fullmetal Alchemist : Brotherhood",
+        "titre_recherche": "Fullmetal Alchemist : Brotherhood",
+        "url_adkami": "https://www.adkami.com/anime/33",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Great Pretender",
+        "titre_recherche": "Great Pretender",
+        "url_adkami": "https://www.adkami.com/anime/3836",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Gyakkyou Burai Kaiji: Ultimate Survivor",
+        "titre_recherche": "Gyakkyou Burai Kaiji: Ultimate Survivor",
+        "url_adkami": "https://www.adkami.com/anime/314",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higashi no Eden",
+        "titre_recherche": "Higashi no Eden",
+        "url_adkami": "https://www.adkami.com/anime/948",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Highschool of the Dead",
+        "titre_recherche": "Highschool of the Dead",
+        "url_adkami": "https://www.adkami.com/anime/26",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higurashi no Naku Koro ni Gou",
+        "titre_recherche": "Higurashi no Naku Koro ni Gou",
+        "url_adkami": "https://www.adkami.com/anime/3910",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higurashi no Naku Koro ni Kai [Saison 2]",
+        "titre_recherche": "Higurashi no Naku Koro ni Kai [Saison 2]",
+        "url_adkami": "https://www.adkami.com/anime/326",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Higurashi no Naku Koro ni [Saison 1]",
+        "titre_recherche": "Higurashi no Naku Koro ni [Saison 1]",
+        "url_adkami": "https://www.adkami.com/anime/325",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Hunter x Hunter (2011)",
+        "titre_recherche": "Hunter x Hunter (2011)",
+        "url_adkami": "https://www.adkami.com/anime/34",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "ID:Invaded",
+        "titre_recherche": "ID:Invaded",
+        "url_adkami": "https://www.adkami.com/anime/3674",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Joker Game",
+        "titre_recherche": "Joker Game",
+        "url_adkami": "https://www.adkami.com/anime/1742",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kaiba",
+        "titre_recherche": "Kaiba",
+        "url_adkami": "https://www.adkami.com/anime/1079",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kakurenbo",
+        "titre_recherche": "Kakurenbo",
+        "url_adkami": "https://www.adkami.com/anime/5128",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kamonohashi Ron no Kindan Suiri",
+        "titre_recherche": "Kamonohashi Ron no Kindan Suiri",
+        "url_adkami": "https://www.adkami.com/anime/4990",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kara no Kyoukai",
+        "titre_recherche": "Kara no Kyoukai",
+        "url_adkami": "https://www.adkami.com/anime/835",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Killing Bites",
+        "titre_recherche": "Killing Bites",
+        "url_adkami": "https://www.adkami.com/anime/2659",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kindaichi Shounen no Jikenbo",
+        "titre_recherche": "Kindaichi Shounen no Jikenbo",
+        "url_adkami": "https://www.adkami.com/anime/451",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Kindaichi Shounen no Jikenbo Returns",
+        "titre_recherche": "Kindaichi Shounen no Jikenbo Returns",
+        "url_adkami": "https://www.adkami.com/anime/1113",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Koukaku Kidoutai: SAC_2045",
+        "titre_recherche": "Koukaku Kidoutai: SAC_2045",
+        "url_adkami": "https://www.adkami.com/anime/3819",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Magia Record : Mahou Shoujo Madoka☆Magica Gaiden",
+        "titre_recherche": "Magia Record : Mahou Shoujo Madoka☆Magica Gaiden",
+        "url_adkami": "https://www.adkami.com/anime/3673",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mahou Shoujo Ikusei Keikaku",
+        "titre_recherche": "Mahou Shoujo Ikusei Keikaku",
+        "url_adkami": "https://www.adkami.com/anime/1891",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mahou Shoujo Madoka★Magica",
+        "titre_recherche": "Mahou Shoujo Madoka★Magica",
+        "url_adkami": "https://www.adkami.com/anime/256",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Marriagetoxin",
+        "titre_recherche": "Marriagetoxin",
+        "url_adkami": "https://www.adkami.com/anime/6031",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Meitantei Conan: Zero no Tea Time",
+        "titre_recherche": "Meitantei Conan: Zero no Tea Time",
+        "url_adkami": "https://www.adkami.com/anime/4596",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mirai Nikki",
+        "titre_recherche": "Mirai Nikki",
+        "url_adkami": "https://www.adkami.com/anime/130",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Monster",
+        "titre_recherche": "Monster",
+        "url_adkami": "https://www.adkami.com/anime/307",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Munou na Nana",
+        "titre_recherche": "Munou na Nana",
+        "url_adkami": "https://www.adkami.com/anime/3931",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "My Home Hero",
+        "titre_recherche": "My Home Hero",
+        "url_adkami": "https://www.adkami.com/anime/4846",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Perfect Blue",
+        "titre_recherche": "Perfect Blue",
+        "url_adkami": "https://www.adkami.com/anime/2297",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Pet",
+        "titre_recherche": "Pet",
+        "url_adkami": "https://www.adkami.com/anime/3684",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Psycho Pass : Sinners of the System",
+        "titre_recherche": "Psycho Pass : Sinners of the System",
+        "url_adkami": "https://www.adkami.com/anime/3600",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Psycho-Pass",
+        "titre_recherche": "Psycho-Pass",
+        "url_adkami": "https://www.adkami.com/anime/203",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Re:Zero kara Hajimeru Isekai Seikatsu",
+        "titre_recherche": "Re:Zero kara Hajimeru Isekai Seikatsu",
+        "url_adkami": "https://www.adkami.com/anime/1736",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Reincarnation no Kaben",
+        "titre_recherche": "Reincarnation no Kaben",
+        "url_adkami": "https://www.adkami.com/anime/6042",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Satsuriku no Tenshi",
+        "titre_recherche": "Satsuriku no Tenshi",
+        "url_adkami": "https://www.adkami.com/anime/2955",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Selector infected WIXOSS",
+        "titre_recherche": "Selector infected WIXOSS",
+        "url_adkami": "https://www.adkami.com/anime/1099",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shibou Yuugi de Meshi wo Kuu.",
+        "titre_recherche": "Shibou Yuugi de Meshi wo Kuu.",
+        "url_adkami": "https://www.adkami.com/anime/5951",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shihaisha no Tasogare",
+        "titre_recherche": "Shihaisha no Tasogare",
+        "url_adkami": "https://www.adkami.com/anime/4717",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shingeki no Kyojin: Lost Girls",
+        "titre_recherche": "Shingeki no Kyojin: Lost Girls",
+        "url_adkami": "https://www.adkami.com/anime/2887",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Steins;Gate",
+        "titre_recherche": "Steins;Gate",
+        "url_adkami": "https://www.adkami.com/anime/8",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Steins;Gate 0",
+        "titre_recherche": "Steins;Gate 0",
+        "url_adkami": "https://www.adkami.com/anime/2875",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Summer Wars",
+        "titre_recherche": "Summer Wars",
+        "url_adkami": "https://www.adkami.com/anime/1001",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Tantei wa mou, Shindeiru.",
+        "titre_recherche": "Tantei wa mou, Shindeiru.",
+        "url_adkami": "https://www.adkami.com/anime/4244",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Tenrou: Sirius the Jaeger",
+        "titre_recherche": "Tenrou: Sirius the Jaeger",
+        "url_adkami": "https://www.adkami.com/anime/2987",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Tesla Note",
+        "titre_recherche": "Tesla Note",
+        "url_adkami": "https://www.adkami.com/anime/4348",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Umineko no naku koro ni",
+        "titre_recherche": "Umineko no naku koro ni",
+        "url_adkami": "https://www.adkami.com/anime/523",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Warau Salesman NEW",
+        "titre_recherche": "Warau Salesman NEW",
+        "url_adkami": "https://www.adkami.com/anime/2188",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Zankyou no Terror",
+        "titre_recherche": "Zankyou no Terror",
+        "url_adkami": "https://www.adkami.com/anime/1186",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Da Li Si Ri Zhi",
+        "titre_recherche": "Da Li Si Ri Zhi",
+        "url_adkami": "https://www.adkami.com/anime/3823",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Guimi Zhi Zhu: Xiaochou Pian",
+        "titre_recherche": "Guimi Zhi Zhu: Xiaochou Pian",
+        "url_adkami": "https://www.adkami.com/anime/5732",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Mi Yu Xing Zhe",
+        "titre_recherche": "Mi Yu Xing Zhe",
+        "url_adkami": "https://www.adkami.com/anime/2894",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Min Diao Ju Yi Wen Lu",
+        "titre_recherche": "Min Diao Ju Yi Wen Lu",
+        "url_adkami": "https://www.adkami.com/anime/4063",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Shuangsheng Lingtan",
+        "titre_recherche": "Shuangsheng Lingtan",
+        "url_adkami": "https://www.adkami.com/anime/2906",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Gigigoegoe Sunghyungsoo",
+        "titre_recherche": "Gigigoegoe Sunghyungsoo",
+        "url_adkami": "https://www.adkami.com/anime/4515",
+        "source": "Thriller"
+    },
+    {
+        "titre_affiche": "Seoul-yeok",
+        "titre_recherche": "Seoul-yeok",
+        "url_adkami": "https://www.adkami.com/anime/3305",
+        "source": "Thriller"
+    }
+]

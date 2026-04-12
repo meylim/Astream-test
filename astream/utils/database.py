@@ -6,7 +6,7 @@ import asyncio
 from astream.utils.logger import logger
 from astream.config.settings import database, settings
 
-DATABASE_VERSION = "2.0"
+DATABASE_VERSION = "3.0"
 
 
 async def setup_database():
@@ -25,7 +25,7 @@ async def setup_database():
         if current_version != DATABASE_VERSION:
             logger.log("DATABASE", f"Migration v{current_version} → v{DATABASE_VERSION}")
 
-            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb'}
+            allowed_tables = {'scrape_lock', 'metadata', 'animesama', 'tmdb', 'anime_xref', 'jikan', 'cinemeta', 'kitsu'}
 
             if settings.DATABASE_TYPE == "sqlite":
                 tables = await database.fetch_all("SELECT name FROM sqlite_master WHERE type='table' AND name NOT IN ('db_version', 'sqlite_sequence')")
@@ -76,6 +76,39 @@ async def setup_database():
         await database.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_key ON tmdb(key)")
         await database.execute("CREATE INDEX IF NOT EXISTS idx_tmdb_expires ON tmdb(expires_at)")
 
+        # Table cache Jikan (86400s TTL par défaut)
+        await database.execute("CREATE TABLE IF NOT EXISTS jikan (key TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER, expires_at INTEGER)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_jikan_key     ON jikan(key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_jikan_expires ON jikan(expires_at)")
+
+        # Table cache Cinemeta (604800s TTL par défaut)
+        await database.execute("CREATE TABLE IF NOT EXISTS cinemeta (key TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER, expires_at INTEGER)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_cinemeta_key     ON cinemeta(key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_cinemeta_expires ON cinemeta(expires_at)")
+
+        await database.execute("CREATE TABLE IF NOT EXISTS kitsu (key TEXT PRIMARY KEY, content TEXT NOT NULL, created_at INTEGER, expires_at INTEGER)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_kitsu_key     ON kitsu(key)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_kitsu_expires ON kitsu(expires_at)")
+
+        # Table de références croisées — persistante entre redémarrages
+        # Mappe as_slug ↔ imdb_id ↔ tmdb_id ↔ mal_id ↔ kitsu_id
+        await database.execute("""
+            CREATE TABLE IF NOT EXISTS anime_xref (
+                as_slug      TEXT PRIMARY KEY,
+                imdb_id      TEXT,
+                tmdb_id      INTEGER,
+                mal_id       INTEGER,
+                kitsu_id     INTEGER,
+                cinemeta_type TEXT DEFAULT 'series',
+                title        TEXT,
+                created_at   INTEGER,
+                updated_at   INTEGER
+            )
+        """)
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_xref_imdb ON anime_xref(imdb_id)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_xref_tmdb ON anime_xref(tmdb_id)")
+        await database.execute("CREATE INDEX IF NOT EXISTS idx_xref_mal  ON anime_xref(mal_id)")
+
         if settings.DATABASE_TYPE == "sqlite":
             await database.execute("PRAGMA busy_timeout=30000")
             await database.execute("PRAGMA journal_mode=WAL")
@@ -85,8 +118,11 @@ async def setup_database():
             await database.execute("PRAGMA foreign_keys=ON")
 
         current_time = time.time()
-        await database.execute("DELETE FROM animesama WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
-        await database.execute("DELETE FROM tmdb WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM animesama  WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM tmdb      WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM jikan     WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM cinemeta  WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
+        await database.execute("DELETE FROM kitsu     WHERE expires_at IS NOT NULL AND expires_at < :current_time;", {"current_time": current_time})
 
     except Exception as e:
         logger.error(f"Erreur configuration base de données: {e}")
@@ -109,6 +145,12 @@ async def get_metadata_from_cache(cache_id: str):
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         logger.warning(f"Préfixe de cache inconnu: {cache_id}")
         return None
@@ -130,6 +172,12 @@ async def set_metadata_to_cache(cache_id: str, data, ttl: int = None):
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         logger.warning(f"Préfixe de cache inconnu: {cache_id}")
         return
@@ -152,6 +200,12 @@ async def delete_metadata_from_cache(cache_id: str):
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         logger.warning(f"Préfixe de cache inconnu pour suppression: {cache_id}")
         return
@@ -172,6 +226,12 @@ async def get_cache_age(cache_id: str) -> float:
         table_name = "animesama"
     elif cache_id.startswith("tmdb:"):
         table_name = "tmdb"
+    elif cache_id.startswith("jikan:"):
+        table_name = "jikan"
+    elif cache_id.startswith("cinemeta:"):
+        table_name = "cinemeta"
+    elif cache_id.startswith("kitsu:"):
+        table_name = "kitsu"
     else:
         return float('inf')
 
