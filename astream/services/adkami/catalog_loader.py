@@ -91,14 +91,21 @@ def _words(text: str) -> set:
 # ===========================
 # Vérification Kitsu rapide (par texte uniquement)
 # ===========================
-async def _kitsu_is_anime(title: str) -> bool:
+async def _kitsu_is_anime(adkami_query: str, cinemeta_name: str) -> bool:
     """
-    Vérifie qu'un titre correspond à un anime sur Kitsu avec l'algorithme rigoureux.
+    Vérifie qu'un titre correspond à un anime sur Kitsu.
+    adkami_query : le titre original recherché.
+    cinemeta_name : le résultat renvoyé par Cinemeta.
     """
     from astream.utils.http_client import http_client, safe_json_decode
 
-    # Utilisation du segment le plus propre pour la recherche API
-    search_term = kitsu_validator.CLEANING_REGEX.sub('', title.lower()).strip()
+    # On prépare le terme de recherche comme dans anim2.py
+    search_term = kitsu_validator.prepare_search_term(adkami_query, cinemeta_name)
+    
+    # Si le validateur renvoie None, c'est qu'un parasite a été détecté
+    if not search_term:
+        return False
+
     safe_q = search_term.replace(" ", "%20")
     url = f"https://kitsu.io/api/edge/anime?filter[text]={safe_q}&page[limit]=5"
 
@@ -106,8 +113,8 @@ async def _kitsu_is_anime(title: str) -> bool:
         resp = await http_client.get(url, headers={"Accept": "application/vnd.api+json"})
         if resp.status_code != 200:
             return False
-        
-        data = safe_json_decode(resp, f"Kitsu check {title}", default=None)
+            
+        data = safe_json_decode(resp, f"Kitsu check {cinemeta_name}", default=None)
         if not data:
             return False
 
@@ -115,18 +122,27 @@ async def _kitsu_is_anime(title: str) -> bool:
             attr = anime.get("attributes", {})
             subtype = str(attr.get("subtype", "")).lower()
             
-            # Exclusion stricte Music / Special
+            # Rejet des formats music/special
             if subtype in ("music", "special"):
                 continue
 
-            # Appel de l'algorithme de validation rigoureux (mots, ordre, gap)
-            if kitsu_validator.is_valid_anime(title, attr):
-                return True
+            # Comparaison avec les différents titres Kitsu
+            k_titles = [
+                attr.get("canonicalTitle"),
+                (attr.get("titles") or {}).get("en"),
+                (attr.get("titles") or {}).get("en_jp"),
+                (attr.get("slug") or "").replace("-", " "),
+            ]
+
+            for kt in k_titles:
+                # MATCH AVANCÉ ICI
+                if kt and kitsu_validator.check_advanced_match(search_term, kt):
+                    return True
 
         return False
-    except Exception as e:
-        logger.warning(f"ADKAMI: Erreur validation Kitsu pour '{title}': {e}")
-        return True # On accepte par défaut en cas de timeout API pour ne pas bloquer le catalogue
+    except Exception:
+        # En cas d'erreur réseau, on accepte par défaut
+        return True
 
 
 # ===========================
@@ -237,8 +253,9 @@ class AdkamiCatalogLoader:
                 cinemeta_name = candidate.get("name", "")
                 cinemeta_id = candidate.get("id", "")
 
-                # Vérifier via Kitsu que c'est un anime
-                is_anime = await _kitsu_is_anime(cinemeta_name)
+                # On passe le `title` (la recherche initiale) ET `cinemeta_name`
+                is_anime = await _kitsu_is_anime(title, cinemeta_name)
+                
                 if is_anime:
                     resolved = {
                         "tt_id": cinemeta_id,
