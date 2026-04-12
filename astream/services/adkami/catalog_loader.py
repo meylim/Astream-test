@@ -17,6 +17,7 @@ import re
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from astream.utils.logger import logger
+from astream.services.kitsu.validator import kitsu_validator
 
 CATALOGUES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "catalogues")
 RESOLUTION_CACHE_FILE = os.path.join(CATALOGUES_DIR, "resolution_cache.json")
@@ -92,22 +93,20 @@ def _words(text: str) -> set:
 # ===========================
 async def _kitsu_is_anime(title: str) -> bool:
     """
-    Vérifie qu'un titre correspond à un anime sur Kitsu.
-    Recherche par texte uniquement (pas d'IMDB → évite les 400).
+    Vérifie qu'un titre correspond à un anime sur Kitsu avec l'algorithme rigoureux.
     """
     from astream.utils.http_client import http_client, safe_json_decode
 
-    norm_title = _normalize(title)
-    if not norm_title:
-        return False
-
-    safe_q = title.strip().replace(" ", "%20")
-    url = f"https://kitsu.io/api/edge/anime?filter[text]={safe_q}&page[limit]=3"
+    # Utilisation du segment le plus propre pour la recherche API
+    search_term = kitsu_validator.CLEANING_REGEX.sub('', title.lower()).strip()
+    safe_q = search_term.replace(" ", "%20")
+    url = f"https://kitsu.io/api/edge/anime?filter[text]={safe_q}&page[limit]=5"
 
     try:
         resp = await http_client.get(url, headers={"Accept": "application/vnd.api+json"})
         if resp.status_code != 200:
             return False
+        
         data = safe_json_decode(resp, f"Kitsu check {title}", default=None)
         if not data:
             return False
@@ -115,31 +114,19 @@ async def _kitsu_is_anime(title: str) -> bool:
         for anime in data.get("data", []):
             attr = anime.get("attributes", {})
             subtype = str(attr.get("subtype", "")).lower()
+            
+            # Exclusion stricte Music / Special
             if subtype in ("music", "special"):
                 continue
 
-            # Comparer les titres Kitsu avec le titre Cinemeta
-            k_titles = [
-                attr.get("canonicalTitle"),
-                (attr.get("titles") or {}).get("en"),
-                (attr.get("titles") or {}).get("en_jp"),
-                (attr.get("slug") or "").replace("-", " "),
-            ]
-            abbr = attr.get("abbreviatedTitles")
-            if abbr:
-                k_titles.extend(abbr)
-
-            for kt in k_titles:
-                if not kt:
-                    continue
-                norm_kt = _normalize(kt)
-                if norm_title and (norm_title in norm_kt or norm_kt in norm_title):
-                    return True
+            # Appel de l'algorithme de validation rigoureux (mots, ordre, gap)
+            if kitsu_validator.is_valid_anime(title, attr):
+                return True
 
         return False
-    except Exception:
-        # En cas d'erreur réseau, on accepte par défaut (titre Adkami = anime confirmé)
-        return True
+    except Exception as e:
+        logger.warning(f"ADKAMI: Erreur validation Kitsu pour '{title}': {e}")
+        return True # On accepte par défaut en cas de timeout API pour ne pas bloquer le catalogue
 
 
 # ===========================
