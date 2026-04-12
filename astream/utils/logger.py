@@ -18,17 +18,20 @@ def setup_logger():
 
     logger.level("ASTREAM", no=50, icon="🚀", color="<fg #7871d6>")
     logger.level("ANIMESAMA", no=48, icon="🐍", color="<fg #4CAF50>")
+    # ---- LIGNE À AJOUTER ICI 👇 ----
+    logger.level("ADKAMI", no=47, icon="🦊", color="<fg #FF9800>") 
+    # --------------------------------
+    logger.level("CINEMETA", no=46, icon="🎬", color="<fg #2196F3>")
     logger.level("API", no=45, icon="📡", color="<fg #2196F3>")
+    logger.level("JIKAN",    no=44, icon="🗾", color="<fg #E91E63>")
     logger.level("TMDB", no=43, icon="🎬", color="<fg #01B4E4>")
     logger.level("STREAM", no=42, icon="📺", color="<fg #FF9800>")
     logger.level("DATABASE", no=40, icon="🔒", color="<fg #9C27B0>")
+    logger.level("XREF",     no=38, icon="🔀", color="<fg #9C27B0>")
     logger.level("PROXY", no=37, icon="🌐", color="<fg #00BCD4>")
+    logger.level("ID_RESOLVER", no=36, icon="🔗", color="<fg #FF9800>")
     logger.level("PERFORMANCE", no=35, icon="⚡", color="<fg #FFEB3B>")
     logger.level("DATASET", no=33, icon="📦", color="<fg #607D8B>")
-    logger.level("ID_RESOLVER", no=36, icon="🔗", color="<fg #FF9800>")
-    logger.level("JIKAN",    no=44, icon="🗾", color="<fg #E91E63>")
-    logger.level("CINEMETA", no=46, icon="🎬", color="<fg #2196F3>")
-    logger.level("XREF",     no=38, icon="🔀", color="<fg #9C27B0>")
 
     logger.level("INFO", icon="💡", color="<fg #00BCD4>")
     logger.level("DEBUG", icon="🔍", color="<fg #795548>")
@@ -64,4 +67,3 @@ def setup_logger():
 
 
 setup_logger()
-    
