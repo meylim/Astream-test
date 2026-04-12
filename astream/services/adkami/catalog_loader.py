@@ -197,7 +197,7 @@ class AdkamiCatalogLoader:
                 logger.error(f"ADKAMI: Erreur lecture simulcast.json: {e}")
                 self._simulcast_raw = []
 
-        logger.log("API", f"Chargement terminé: {len(self._raw_cache)} genres, "
+        logger.log("ADKAMI", f"Chargement terminé: {len(self._raw_cache)} genres, "
                    f"{total} items total, {len(self._simulcast_raw)} simulcasts")
 
     def _load_resolution_cache(self):
@@ -205,7 +205,7 @@ class AdkamiCatalogLoader:
             try:
                 with open(RESOLUTION_CACHE_FILE, 'r', encoding='utf-8') as f:
                     self._resolution_cache = json.load(f)
-                logger.log("API", f"Cache résolution: {len(self._resolution_cache)} entrées")
+                logger.log("ADKAMI", f"Cache résolution: {len(self._resolution_cache)} entrées")
             except Exception as e:
                 logger.error(f"ADKAMI: Erreur lecture cache: {e}")
 
@@ -405,7 +405,7 @@ class AdkamiCatalogLoader:
         self._ready_simulcasts = metas
 
         total_ready = sum(len(v) for v in self._ready_catalogs.values())
-        logger.log("API", f"Catalogues prêts: {total_ready} metas genre + "
+        logger.log("ADKAMI", f"Catalogues prêts: {total_ready} metas genre + "
                    f"{len(self._ready_simulcasts)} simulcasts")
 
     # ===========================
@@ -456,17 +456,17 @@ class AdkamiCatalogLoader:
             # --- Étape 2 : Filtrer ceux déjà résolus ---
             unresolved = [t for t in all_titles if _normalize(t) not in self._resolution_cache]
 
-            logger.log("API", f"🚀 INIT: {len(all_titles)} titres uniques, "
+            logger.log("ADKAMI", f"🚀 INIT: {len(all_titles)} titres uniques, "
                        f"{len(all_titles) - len(unresolved)} déjà en cache, "
                        f"{len(unresolved)} à résoudre")
 
             # Construire les catalogues depuis le cache existant immédiatement
             self._rebuild_all_ready_catalogs()
             self._init_done = True
-            logger.log("API", "📦 Catalogues initiaux construits (depuis cache existant)")
+            logger.log("ADKAMI", "📦 Catalogues initiaux construits (depuis cache existant)")
 
             if not unresolved:
-                logger.log("API", "✅ Tout est déjà résolu, prêt à servir !")
+                logger.log("ADKAMI", "✅ Tout est déjà résolu, prêt à servir !")
                 self._resolving = False
                 return
 
@@ -497,7 +497,7 @@ class AdkamiCatalogLoader:
                 if progress % 50 == 0 or progress >= len(unresolved):
                     self._save_resolution_cache()
                     self._rebuild_all_ready_catalogs()
-                    logger.log("API", f"⏳ Résolution: {progress}/{len(unresolved)} "
+                    logger.log("ADKAMI", f"⏳ Résolution: {progress}/{len(unresolved)} "
                                f"({resolved_ok} ✅ / {resolved_fail} ❌)")
 
                 # Rate limiting Cinemeta + Kitsu
@@ -506,7 +506,7 @@ class AdkamiCatalogLoader:
             # --- Étape 4 : Sauvegarde finale ---
             self._save_resolution_cache()
             self._rebuild_all_ready_catalogs()
-            logger.log("API", f"🎉 Résolution terminée: {resolved_ok} ✅ / {resolved_fail} ❌ "
+            logger.log("ADKAMI", f"🎉 Résolution terminée: {resolved_ok} ✅ / {resolved_fail} ❌ "
                        f"sur {len(unresolved)} titres")
 
         except Exception as e:
