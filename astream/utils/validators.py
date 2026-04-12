@@ -316,3 +316,50 @@ async def filter_jikan_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]
 
     logger.debug(f"filter_jikan: {len(valid)} OK / {rejected} rejetés sur {len(items)}")
     return valid
+
+
+# ===========================
+# ConfigModel & validate_config
+# (utilisés dans api/routes.py)
+# ===========================
+
+import base64
+import json
+from pydantic import BaseModel, field_validator
+
+from astream.config.settings import SUPPORTED_LANGUAGES
+
+
+class ConfigModel(BaseModel):
+    """Modèle de configuration utilisateur décodé depuis le b64config Stremio."""
+    language: str = "Tout"
+    languageOrder: str = "VOSTFR,VF"
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v: str) -> str:
+        if v not in SUPPORTED_LANGUAGES:
+            return "Tout"
+        return v
+
+
+def validate_config(b64config: str) -> dict:
+    """
+    Décode et valide la configuration base64 encodée passée par Stremio.
+    Retourne un dict avec les valeurs de configuration (avec défauts si absent/invalide).
+    """
+    defaults = {"language": "Tout", "languageOrder": "VOSTFR,VF"}
+    if not b64config:
+        return defaults
+    try:
+        # Ajoute le padding base64 si nécessaire
+        padded = b64config + "=" * (-len(b64config) % 4)
+        decoded = base64.urlsafe_b64decode(padded).decode("utf-8")
+        data = json.loads(decoded)
+        if not isinstance(data, dict):
+            return defaults
+        # Fusionne avec les défauts pour garantir les clés obligatoires
+        return {**defaults, **data}
+    except Exception as e:
+        logger.warning(f"validate_config: impossible de décoder '{b64config}': {e}")
+        return defaults
