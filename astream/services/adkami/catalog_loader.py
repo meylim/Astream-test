@@ -1,11 +1,15 @@
 """
-Adkami Catalog Loader — Charge les catalogues JSON + résolution Cinemeta.
+Adkami Catalog Loader — Pré-charge TOUT, résout vers Cinemeta, valide via Kitsu.
 
-Flux :
-  1. Charge les titres Adkami depuis les fichiers final_*.json / simulcast.json
-  2. Résout chaque titre vers un tt* IMDb via Cinemeta + validation Kitsu
-  3. Cache la résolution dans resolution_cache.json pour ne pas refaire les appels
-  4. Sert des metas Stremio avec ID tt* (Cinemeta délègue les fiches)
+Architecture :
+  1. Au __init__ : charge TOUS les JSON Adkami en mémoire
+  2. background_resolve_all() (appelé au startup) :
+     - Pour chaque titre Adkami → search Cinemeta (search_raw, sans Kitsu)
+     - Pour chaque résultat Cinemeta → vérifie via Kitsu texte que c'est un anime
+     - Premier résultat qui passe titre-match + Kitsu → on garde le tt*
+     - Construit _ready_catalogs[genre] = [meta, meta, ...] prêt à servir
+  3. get_genre_catalog(genre, skip, limit) : slice instantané depuis la mémoire
+  4. Cache de résolution persisté dans resolution_cache.json
 """
 import json
 import os
@@ -14,9 +18,11 @@ import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from astream.utils.logger import logger
 
-# Chemin vers le dossier catalogues (relatif au module)
 CATALOGUES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "catalogues")
 RESOLUTION_CACHE_FILE = os.path.join(CATALOGUES_DIR, "resolution_cache.json")
+
+# Limite de résultats par page Stremio
+PAGE_SIZE = 50
 
 # ===========================
 # 45 catégories Adkami
@@ -70,47 +76,138 @@ ADKAMI_CATEGORIES: Dict[str, Dict[str, Any]] = {
 }
 
 
-def _normalize_key(title: str) -> str:
-    """Clé de cache normalisée."""
-    if not title:
+def _normalize(text: str) -> str:
+    """Clé normalisée pour comparaison et cache."""
+    if not text:
         return ""
-    return re.sub(r'[^a-z0-9]', '', title.lower())
+    return re.sub(r'[^a-z0-9]', '', text.lower())
 
 
+def _words(text: str) -> set:
+    return set(re.sub(r'[^a-z0-9]', ' ', text.lower()).split())
+
+
+# ===========================
+# Vérification Kitsu rapide (par texte uniquement)
+# ===========================
+async def _kitsu_is_anime(title: str) -> bool:
+    """
+    Vérifie qu'un titre correspond à un anime sur Kitsu.
+    Recherche par texte uniquement (pas d'IMDB → évite les 400).
+    """
+    from astream.utils.http_client import http_client, safe_json_decode
+
+    norm_title = _normalize(title)
+    if not norm_title:
+        return False
+
+    safe_q = title.strip().replace(" ", "%20")
+    url = f"https://kitsu.io/api/edge/anime?filter[text]={safe_q}&page[limit]=3"
+
+    try:
+        resp = await http_client.get(url, headers={"Accept": "application/vnd.api+json"})
+        if resp.status_code != 200:
+            return False
+        data = safe_json_decode(resp, f"Kitsu check {title}", default=None)
+        if not data:
+            return False
+
+        for anime in data.get("data", []):
+            attr = anime.get("attributes", {})
+            subtype = str(attr.get("subtype", "")).lower()
+            if subtype in ("music", "special"):
+                continue
+
+            # Comparer les titres Kitsu avec le titre Cinemeta
+            k_titles = [
+                attr.get("canonicalTitle"),
+                (attr.get("titles") or {}).get("en"),
+                (attr.get("titles") or {}).get("en_jp"),
+                (attr.get("slug") or "").replace("-", " "),
+            ]
+            abbr = attr.get("abbreviatedTitles")
+            if abbr:
+                k_titles.extend(abbr)
+
+            for kt in k_titles:
+                if not kt:
+                    continue
+                norm_kt = _normalize(kt)
+                if norm_title and (norm_title in norm_kt or norm_kt in norm_title):
+                    return True
+
+        return False
+    except Exception:
+        # En cas d'erreur réseau, on accepte par défaut (titre Adkami = anime confirmé)
+        return True
+
+
+# ===========================
+# Classe principale
+# ===========================
 class AdkamiCatalogLoader:
-    """
-    Charge les catalogues Adkami et sert des metas résolues vers Cinemeta (tt*).
-    """
 
     def __init__(self):
-        # Cache en mémoire : {genre_name: [raw_adkami_items]}
+        # JSON bruts chargés en mémoire : {genre: [raw_items]}
         self._raw_cache: Dict[str, List[Dict]] = {}
-        self._simulcast_raw: Optional[List[Dict]] = None
+        self._simulcast_raw: List[Dict] = []
 
-        # Cache de résolution : {normalized_title: {tt_id, name, poster, type, ...}}
+        # Cache de résolution persisté : {norm_title: {tt_id, name, ...} | {_not_found: True}}
         self._resolution_cache: Dict[str, Dict] = {}
-        self._load_resolution_cache()
 
-        # Sémaphore pour limiter les appels parallèles de résolution
-        self._resolve_semaphore: Optional[asyncio.Semaphore] = None
+        # Catalogues prêts à servir : {genre: [stremio_meta, ...]}
+        self._ready_catalogs: Dict[str, List[Dict]] = {}
+        self._ready_simulcasts: List[Dict] = []
 
-        # Flag : résolution en cours
+        # État
+        self._init_done = False
         self._resolving = False
 
+        # Charger tout au démarrage
+        self._load_all_json()
+        self._load_resolution_cache()
+
     # ===========================
-    # Chargement / Sauvegarde du cache de résolution
+    # Chargement initial — TOUT en mémoire
     # ===========================
+    def _load_all_json(self):
+        """Charge tous les JSON Adkami d'un coup."""
+        total = 0
+        for genre_name in ADKAMI_CATEGORIES:
+            filepath = os.path.join(CATALOGUES_DIR, f"final_{genre_name.lower()}.json")
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        items = json.load(f)
+                    self._raw_cache[genre_name] = items
+                    total += len(items)
+                except Exception as e:
+                    logger.error(f"ADKAMI: Erreur lecture final_{genre_name.lower()}.json: {e}")
+                    self._raw_cache[genre_name] = []
+            else:
+                self._raw_cache[genre_name] = []
+
+        # Simulcasts
+        sim_path = os.path.join(CATALOGUES_DIR, "simulcast.json")
+        if os.path.exists(sim_path):
+            try:
+                with open(sim_path, 'r', encoding='utf-8') as f:
+                    self._simulcast_raw = json.load(f)
+            except Exception as e:
+                logger.error(f"ADKAMI: Erreur lecture simulcast.json: {e}")
+                self._simulcast_raw = []
+
+        logger.log("ADKAMI", f"Chargement terminé: {len(self._raw_cache)} genres, "
+                   f"{total} items total, {len(self._simulcast_raw)} simulcasts")
+
     def _load_resolution_cache(self):
         if os.path.exists(RESOLUTION_CACHE_FILE):
             try:
                 with open(RESOLUTION_CACHE_FILE, 'r', encoding='utf-8') as f:
                     self._resolution_cache = json.load(f)
-                logger.log("ADKAMI", f"Cache résolution chargé: {len(self._resolution_cache)} entrées")
+                logger.log("ADKAMI", f"Cache résolution: {len(self._resolution_cache)} entrées")
             except Exception as e:
-                logger.error(f"ADKAMI: Erreur lecture cache résolution: {e}")
-                self._resolution_cache = {}
-        else:
-            self._resolution_cache = {}
+                logger.error(f"ADKAMI: Erreur lecture cache: {e}")
 
     def _save_resolution_cache(self):
         try:
@@ -121,82 +218,19 @@ class AdkamiCatalogLoader:
             logger.error(f"ADKAMI: Erreur sauvegarde cache: {e}")
 
     # ===========================
-    # Chargement des fichiers JSON Adkami
+    # Résolution titre → tt* (Cinemeta + Kitsu check)
     # ===========================
-    def _load_json(self, filename: str) -> List[Dict]:
-        filepath = os.path.join(CATALOGUES_DIR, filename)
-        if not os.path.exists(filepath):
-            logger.warning(f"ADKAMI: Fichier introuvable: {filepath}")
-            return []
-        try:
-            with open(filepath, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"ADKAMI: Erreur lecture {filename}: {e}")
-            return []
-
-    def _get_raw_genre(self, genre_name: str) -> List[Dict]:
-        """Charge les items bruts d'une catégorie (avec cache mémoire)."""
-        if genre_name in self._raw_cache:
-            return self._raw_cache[genre_name]
-        filename = f"final_{genre_name.lower()}.json"
-        items = self._load_json(filename)
-        self._raw_cache[genre_name] = items
-        return items
-
-    def _get_raw_simulcasts(self) -> List[Dict]:
-        if self._simulcast_raw is not None:
-            return self._simulcast_raw
-        self._simulcast_raw = self._load_json("simulcast.json")
-        return self._simulcast_raw
-
-    # ===========================
-    # Résolution titre → tt* via Cinemeta (SANS Kitsu)
-    # ===========================
-    @staticmethod
-    def _best_match(query: str, results: list) -> Optional[Dict]:
-        """Choisit le résultat Cinemeta dont le titre correspond le mieux."""
-        query_norm = _normalize_key(query)
-        if not query_norm:
-            return results[0] if results else None
-
-        # 1. Match exact normalisé
-        for r in results:
-            name_norm = _normalize_key(r.get("name", ""))
-            if name_norm == query_norm:
-                return r
-
-        # 2. L'un contient l'autre
-        for r in results:
-            name_norm = _normalize_key(r.get("name", ""))
-            if query_norm in name_norm or name_norm in query_norm:
-                return r
-
-        # 3. Intersection de mots >= 50%
-        q_words = set(re.sub(r'[^a-z0-9]', ' ', query.lower()).split())
-        best_score = 0
-        best_result = None
-        for r in results:
-            r_words = set(re.sub(r'[^a-z0-9]', ' ', r.get("name", "").lower()).split())
-            common = len(q_words & r_words)
-            score = common / max(len(q_words), 1)
-            if score > best_score:
-                best_score = score
-                best_result = r
-
-        if best_score >= 0.5:
-            return best_result
-
-        return None
-
     async def _resolve_title(self, title: str) -> Optional[Dict]:
         """
-        Résout un titre Adkami en meta Cinemeta (tt*).
-        Recherche Cinemeta SANS Kitsu — les titres Adkami sont déjà des anime confirmés.
+        Résout un titre Adkami :
+          1. Cherche sur Cinemeta (search_raw, SANS Kitsu intégré)
+          2. Pour chaque résultat Cinemeta, vérifie titre-match
+          3. Vérifie via Kitsu texte que c'est bien un anime
+          4. Premier qui passe les 2 checks → on garde
         """
         from astream.services.cinemeta.client import cinemeta_client
 
-        key = _normalize_key(title)
+        key = _normalize(title)
         if key in self._resolution_cache:
             cached = self._resolution_cache[key]
             if cached.get("_not_found"):
@@ -204,140 +238,99 @@ class AdkamiCatalogLoader:
             return cached
 
         try:
-            # search_raw = Cinemeta SANS Kitsu
-            results = await cinemeta_client.search_raw(title, limit=5)
-            if results:
-                best = self._best_match(title, results)
-                if best:
+            results = await cinemeta_client.search_raw(title, limit=10)
+            if not results:
+                self._resolution_cache[key] = {"_not_found": True}
+                return None
+
+            # Filtrer par pertinence de titre d'abord
+            candidates = self._rank_candidates(title, results)
+
+            for candidate in candidates:
+                cinemeta_name = candidate.get("name", "")
+                cinemeta_id = candidate.get("id", "")
+
+                # Vérifier via Kitsu que c'est un anime
+                is_anime = await _kitsu_is_anime(cinemeta_name)
+                if is_anime:
                     resolved = {
-                        "tt_id": best.get("id", ""),
-                        "name": best.get("name", title),
-                        "type": best.get("type", "series"),
-                        "poster": best.get("poster", ""),
-                        "background": best.get("background", ""),
-                        "description": best.get("description", ""),
-                        "releaseInfo": best.get("releaseInfo", ""),
-                        "imdbRating": best.get("imdbRating", ""),
-                        "runtime": best.get("runtime", ""),
-                        "genres": best.get("genres", []),
+                        "tt_id": cinemeta_id,
+                        "name": cinemeta_name,
+                        "type": candidate.get("type", "series"),
+                        "poster": candidate.get("poster", ""),
+                        "background": candidate.get("background", ""),
+                        "description": candidate.get("description", ""),
+                        "releaseInfo": candidate.get("releaseInfo", ""),
+                        "imdbRating": candidate.get("imdbRating", ""),
+                        "runtime": candidate.get("runtime", ""),
+                        "genres": candidate.get("genres", []),
                     }
                     self._resolution_cache[key] = resolved
-                    logger.debug(f"ADKAMI: Résolu '{title}' → {resolved['tt_id']} ({resolved['name']})")
+                    logger.debug(f"ADKAMI ✅ '{title}' → {cinemeta_id} ({cinemeta_name})")
                     return resolved
+                else:
+                    logger.debug(f"ADKAMI ❌ '{title}' candidat '{cinemeta_name}' rejeté Kitsu")
 
-            # Aucun match acceptable
+            # Aucun candidat validé
             self._resolution_cache[key] = {"_not_found": True}
-            logger.debug(f"ADKAMI: Introuvable sur Cinemeta: '{title}'")
+            logger.debug(f"ADKAMI: Aucun match anime pour '{title}'")
             return None
+
         except Exception as e:
             logger.warning(f"ADKAMI: Résolution échouée pour '{title}': {e}")
             return None
 
-    async def resolve_items(self, raw_items: List[Dict], limit: int = 50) -> List[Dict]:
+    def _rank_candidates(self, query: str, results: List[Dict]) -> List[Dict]:
         """
-        Résout une liste d'items Adkami vers des metas Cinemeta (tt*).
-        Retourne uniquement les items résolus.
+        Trie les résultats Cinemeta par pertinence.
+        Retourne seulement ceux avec un score de match acceptable.
         """
-        if self._resolve_semaphore is None:
-            self._resolve_semaphore = asyncio.Semaphore(3)
+        query_norm = _normalize(query)
+        q_words = _words(query)
+        scored = []
 
-        # Dédupliquer par titre normalisé
-        seen_keys = set()
-        unique_items = []
-        for item in raw_items:
-            key = _normalize_key(item.get("titre_affiche", ""))
-            if not key or key in seen_keys:
-                continue
-            seen_keys.add(key)
-            unique_items.append(item)
+        for r in results:
+            name = r.get("name", "")
+            name_norm = _normalize(name)
+            r_words = _words(name)
 
-        # Séparer les déjà résolus des à résoudre
-        resolved_metas = []
-        to_resolve = []
-
-        for item in unique_items:
-            title = item.get("titre_affiche", "").strip()
-            if not title:
-                continue
-            key = _normalize_key(title)
-            cached = self._resolution_cache.get(key)
-            if cached and not cached.get("_not_found"):
-                resolved_metas.append(self._build_stremio_meta(cached, item))
-            elif cached and cached.get("_not_found"):
-                continue  # Déjà tenté, introuvable
+            # Score de match
+            if name_norm == query_norm:
+                score = 100  # Match exact
+            elif query_norm in name_norm or name_norm in query_norm:
+                score = 80   # L'un contient l'autre
             else:
-                to_resolve.append(item)
+                common = len(q_words & r_words)
+                pct = common / max(len(q_words), 1)
+                if pct >= 0.5:
+                    score = int(pct * 60)
+                else:
+                    continue  # Pas assez proche, on skip
 
-            if len(resolved_metas) >= limit and not to_resolve:
-                break
+            scored.append((score, r))
 
-        # Résoudre les manquants (en parallèle, limité)
-        if to_resolve:
-            needed = limit - len(resolved_metas)
-            batch = to_resolve[:max(needed * 2, 20)]  # Résoudre un peu plus que nécessaire
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in scored]
 
-            async def _resolve_one(item):
-                async with self._resolve_semaphore:
-                    title = item.get("titre_affiche", "").strip()
-                    resolved = await self._resolve_title(title)
-                    if resolved:
-                        return self._build_stremio_meta(resolved, item)
-                    return None
-
-            results = await asyncio.gather(
-                *[_resolve_one(it) for it in batch],
-                return_exceptions=True
-            )
-
-            for r in results:
-                if isinstance(r, Exception) or r is None:
-                    continue
-                resolved_metas.append(r)
-
-            # Sauvegarder le cache après résolution
-            self._save_resolution_cache()
-
-        # Dédupliquer par tt_id
-        seen_tt = set()
-        final = []
-        for meta in resolved_metas:
-            tt_id = meta.get("id", "")
-            if tt_id in seen_tt:
-                continue
-            seen_tt.add(tt_id)
-            final.append(meta)
-            if len(final) >= limit:
-                break
-
-        return final
-
-    def _build_stremio_meta(self, resolved: Dict, adkami_item: Dict) -> Dict:
-        """Construit une meta Stremio à partir des données résolues + Adkami."""
-        tt_id = resolved.get("tt_id", "")
-        media_type = resolved.get("type", "series")
-
+    # ===========================
+    # Construction meta Stremio
+    # ===========================
+    @staticmethod
+    def _build_meta(resolved: Dict, adkami_item: Dict) -> Dict:
+        """Construit une meta Stremio depuis les données résolues + Adkami."""
         meta = {
-            "id": tt_id,
-            "type": media_type,
+            "id": resolved.get("tt_id", ""),
+            "type": resolved.get("type", "series"),
             "name": resolved.get("name", adkami_item.get("titre_affiche", "")),
             "posterShape": "poster",
         }
-
         poster = resolved.get("poster") or adkami_item.get("image_url", "")
         if poster:
             meta["poster"] = poster
-
-        background = resolved.get("background", "")
-        if background:
-            meta["background"] = background
-
-        description = resolved.get("description", "")
-        if description:
-            meta["description"] = description
-
-        release_info = resolved.get("releaseInfo", "")
-        if release_info:
-            meta["releaseInfo"] = release_info
+        for field in ("background", "description", "releaseInfo", "runtime"):
+            val = resolved.get(field)
+            if val:
+                meta[field] = val
 
         imdb_rating = resolved.get("imdbRating", "")
         if not imdb_rating and adkami_item.get("score_mal"):
@@ -345,106 +338,181 @@ class AdkamiCatalogLoader:
         if imdb_rating:
             meta["imdbRating"] = imdb_rating
 
-        runtime = resolved.get("runtime", "")
-        if runtime:
-            meta["runtime"] = runtime
-
         genres = resolved.get("genres", [])
         if genres:
             meta["genres"] = genres
-
         return meta
 
     # ===========================
-    # API publique
+    # Construction catalogues prêts à servir
     # ===========================
-    async def get_genre_catalog(self, genre_name: str, limit: int = 50) -> List[Dict]:
-        """Retourne les metas résolues pour une catégorie Adkami."""
-        if genre_name not in ADKAMI_CATEGORIES:
-            logger.warning(f"ADKAMI: Catégorie inconnue: {genre_name}")
-            return []
-        raw_items = self._get_raw_genre(genre_name)
-        return await self.resolve_items(raw_items, limit=limit)
+    def _build_ready_catalog(self, genre_name: str) -> List[Dict]:
+        """Construit le catalogue prêt à servir pour un genre, depuis le cache de résolution."""
+        raw_items = self._raw_cache.get(genre_name, [])
+        metas = []
+        seen_titles = set()
+        seen_tt = set()
 
-    async def get_simulcasts(self, limit: int = 50) -> List[Dict]:
-        """Retourne les simulcasts résolus."""
-        raw_items = self._get_raw_simulcasts()
-        return await self.resolve_items(raw_items, limit=limit)
+        for item in raw_items:
+            title = item.get("titre_affiche", "").strip()
+            if not title:
+                continue
+            norm = _normalize(title)
+            if norm in seen_titles:
+                continue
+            seen_titles.add(norm)
+
+            cached = self._resolution_cache.get(norm)
+            if not cached or cached.get("_not_found"):
+                continue
+
+            tt_id = cached.get("tt_id", "")
+            if not tt_id or tt_id in seen_tt:
+                continue
+            seen_tt.add(tt_id)
+
+            metas.append(self._build_meta(cached, item))
+
+        return metas
+
+    def _rebuild_all_ready_catalogs(self):
+        """Reconstruit tous les catalogues prêts à servir depuis le cache."""
+        for genre_name in ADKAMI_CATEGORIES:
+            self._ready_catalogs[genre_name] = self._build_ready_catalog(genre_name)
+
+        # Simulcasts
+        metas = []
+        seen_tt = set()
+        seen_norm = set()
+        for item in self._simulcast_raw:
+            title = item.get("titre_affiche", "").strip()
+            if not title:
+                continue
+            norm = _normalize(title)
+            if norm in seen_norm:
+                continue
+            seen_norm.add(norm)
+
+            cached = self._resolution_cache.get(norm)
+            if not cached or cached.get("_not_found"):
+                continue
+            tt_id = cached.get("tt_id", "")
+            if not tt_id or tt_id in seen_tt:
+                continue
+            seen_tt.add(tt_id)
+            metas.append(self._build_meta(cached, item))
+
+        self._ready_simulcasts = metas
+
+        total_ready = sum(len(v) for v in self._ready_catalogs.values())
+        logger.log("ADKAMI", f"Catalogues prêts: {total_ready} metas genre + "
+                   f"{len(self._ready_simulcasts)} simulcasts")
+
+    # ===========================
+    # API publique — service instantané
+    # ===========================
+    def get_genre_catalog(self, genre_name: str, skip: int = 0, limit: int = PAGE_SIZE) -> List[Dict]:
+        """Retourne une page du catalogue genre. Instantané depuis la mémoire."""
+        if genre_name not in ADKAMI_CATEGORIES:
+            return []
+        catalog = self._ready_catalogs.get(genre_name, [])
+        return catalog[skip:skip + limit]
+
+    def get_simulcasts(self, skip: int = 0, limit: int = PAGE_SIZE) -> List[Dict]:
+        """Retourne une page des simulcasts. Instantané."""
+        return self._ready_simulcasts[skip:skip + limit]
 
     def get_all_genres(self) -> List[str]:
-        """Retourne la liste des catégories pour le manifest."""
         return list(ADKAMI_CATEGORIES.keys())
 
     # ===========================
-    # Résolution en arrière-plan (appelée au startup)
+    # Résolution complète au démarrage
     # ===========================
     async def background_resolve_all(self):
         """
-        Résout tous les titres Adkami en arrière-plan.
-        Appelée une fois au démarrage pour pré-remplir le cache.
+        Résout TOUS les titres Adkami au démarrage :
+          1. Collecte tous les titres uniques
+          2. Filtre ceux déjà en cache
+          3. Résout par vagues (3 en parallèle, rate-limité)
+          4. Construit les catalogues prêts à servir
         """
         if self._resolving:
             return
         self._resolving = True
 
-        logger.log("ADKAMI", "Début de la résolution en arrière-plan...")
-        all_titles = set()
+        try:
+            # --- Étape 1 : Collecter tous les titres uniques ---
+            all_titles = set()
+            for genre_name, items in self._raw_cache.items():
+                for item in items:
+                    t = item.get("titre_affiche", "").strip()
+                    if t:
+                        all_titles.add(t)
+            for item in self._simulcast_raw:
+                t = item.get("titre_affiche", "").strip()
+                if t:
+                    all_titles.add(t)
 
-        # Collecter tous les titres uniques
-        for genre_name in ADKAMI_CATEGORIES:
-            for item in self._get_raw_genre(genre_name):
-                title = item.get("titre_affiche", "").strip()
-                if title:
-                    all_titles.add(title)
+            # --- Étape 2 : Filtrer ceux déjà résolus ---
+            unresolved = [t for t in all_titles if _normalize(t) not in self._resolution_cache]
 
-        for item in self._get_raw_simulcasts():
-            title = item.get("titre_affiche", "").strip()
-            if title:
-                all_titles.add(title)
+            logger.log("ADKAMI", f"🚀 INIT: {len(all_titles)} titres uniques, "
+                       f"{len(all_titles) - len(unresolved)} déjà en cache, "
+                       f"{len(unresolved)} à résoudre")
 
-        # Filtrer ceux déjà résolus
-        unresolved = []
-        for title in all_titles:
-            key = _normalize_key(title)
-            if key not in self._resolution_cache:
-                unresolved.append(title)
+            # Construire les catalogues depuis le cache existant immédiatement
+            self._rebuild_all_ready_catalogs()
+            self._init_done = True
+            logger.log("ADKAMI", "📦 Catalogues initiaux construits (depuis cache existant)")
 
-        logger.log("ADKAMI", f"{len(all_titles)} titres uniques, {len(unresolved)} à résoudre")
+            if not unresolved:
+                logger.log("ADKAMI", "✅ Tout est déjà résolu, prêt à servir !")
+                self._resolving = False
+                return
 
-        if not unresolved:
+            # --- Étape 3 : Résoudre par vagues ---
+            sem = asyncio.Semaphore(3)
+            resolved_ok = 0
+            resolved_fail = 0
+
+            for i in range(0, len(unresolved), 10):
+                batch = unresolved[i:i + 10]
+
+                async def _do(title):
+                    async with sem:
+                        return await self._resolve_title(title)
+
+                results = await asyncio.gather(*[_do(t) for t in batch], return_exceptions=True)
+
+                for r in results:
+                    if isinstance(r, Exception):
+                        resolved_fail += 1
+                    elif r is not None:
+                        resolved_ok += 1
+                    else:
+                        resolved_fail += 1
+
+                # Sauvegarde et rebuild réguliers
+                progress = i + len(batch)
+                if progress % 50 == 0 or progress >= len(unresolved):
+                    self._save_resolution_cache()
+                    self._rebuild_all_ready_catalogs()
+                    logger.log("ADKAMI", f"⏳ Résolution: {progress}/{len(unresolved)} "
+                               f"({resolved_ok} ✅ / {resolved_fail} ❌)")
+
+                # Rate limiting Cinemeta + Kitsu
+                await asyncio.sleep(1.0)
+
+            # --- Étape 4 : Sauvegarde finale ---
+            self._save_resolution_cache()
+            self._rebuild_all_ready_catalogs()
+            logger.log("ADKAMI", f"🎉 Résolution terminée: {resolved_ok} ✅ / {resolved_fail} ❌ "
+                       f"sur {len(unresolved)} titres")
+
+        except Exception as e:
+            logger.error(f"ADKAMI: Erreur background_resolve_all: {e}")
+        finally:
             self._resolving = False
-            return
-
-        if self._resolve_semaphore is None:
-            self._resolve_semaphore = asyncio.Semaphore(3)
-
-        # Résoudre par vagues
-        resolved_count = 0
-        for i in range(0, len(unresolved), 10):
-            batch = unresolved[i:i+10]
-
-            async def _do(title):
-                async with self._resolve_semaphore:
-                    return await self._resolve_title(title)
-
-            await asyncio.gather(*[_do(t) for t in batch], return_exceptions=True)
-            resolved_count += len(batch)
-
-            # Sauvegarde régulière
-            if resolved_count % 50 == 0:
-                self._save_resolution_cache()
-                logger.log("ADKAMI", f"Résolution: {resolved_count}/{len(unresolved)} traités")
-
-            # Rate limiting
-            await asyncio.sleep(1.5)
-
-        self._save_resolution_cache()
-        logger.log("ADKAMI", f"Résolution terminée: {resolved_count} titres traités")
-        self._resolving = False
-
-    def clear_cache(self):
-        self._raw_cache.clear()
-        self._simulcast_raw = None
 
 
 # ===========================
